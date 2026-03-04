@@ -1,25 +1,43 @@
+import base64
 import os
 import requests
+from datetime import datetime
+from email.utils import parsedate_to_datetime
+from typing import Optional
 from urllib.parse import unquote, urlparse
 from xml.etree import ElementTree
 
 
 class OwnCloudAPI:
-    def __init__(self, subfolder):
+    def __init__(self):
         self.owncloud_url = os.environ["OWCLOUD_URL"]
         self.submissions_token = os.environ["OWCLOUD_SUBMISSIONS_TOKEN"]
         self.configs_token = os.environ["OWCLOUD_CONFIGS_TOKEN"]
         self.backups_token = os.environ["OWCLOUD_BACKUPS_TOKEN"]
 
-    def _propfind_with_props(self, remote_path, depth="1", props=None):
-        """Run PROPFIND with Bearer token. By default requests getlastmodified and resourcetype.
-        Pass props to request only getetag+resourcetype for a minimal response.
+    def _auth_headers(self, token_type="submissions"):
+        """Basic auth header for OwnCloud: Base64(accessToken + ':'). Used for all requests.
+
+        Args:
+            token_type (str): One of "submissions", "configs", "backups". Default "submissions".
         """
-        url = f"{self.owncloud_url}/{remote_path}".rstrip("/")
+        tokens = {
+            "submissions": self.submissions_token,
+            "configs": self.configs_token,
+            "backups": self.backups_token,
+        }
+        token = tokens.get(token_type, self.submissions_token)
+        credentials = f"{token}:"
+        encoded = base64.b64encode(credentials.encode()).decode()
+        return {"Authorization": f"Basic {encoded}"}
+
+    def _propfind_with_props(self, remote_path="", depth="1", props=None):
+        """Run PROPFIND with Basic auth. By default requests getlastmodified and resourcetype."""
+        url = f"{self.owncloud_url}/{remote_path}".rstrip("/") if remote_path else self.owncloud_url.rstrip("/")
         headers = {
             "Depth": depth,
-            "Authorization": f"Bearer {self.submissions_token}",
             "Content-Type": "application/xml",
+            **self._auth_headers(token_type="submissions"),
         }
         if props is None:
             props = "<d:getlastmodified/><d:resourcetype/>"
@@ -29,114 +47,45 @@ class OwnCloudAPI:
             raise RuntimeError(f"PROPFIND failed: {response.status_code} - {response.text}")
         return response.content
 
-    def _propfind_folders_etag(self, remote_path):
-        """PROPFIND Depth 1 with only getetag and resourcetype for minimal payload."""
-        return self._propfind_with_props(
-            remote_path, depth="1", props="<d:getetag/><d:resourcetype/>"
-        )
-
-    def _get_folder_etag(self, remote_path):
-        """Get the ETag of the folder itself (Depth 0, getetag only). Returns None if missing."""
-        raw = self._propfind_with_props(
-            remote_path, depth="0", props="<d:getetag/>"
-        )
+    def _list_modified_collections(self, remote_path: str, last_check_utc) -> list[tuple[str, Optional[datetime]]]:
+        """List direct child folders whose getlastmodified is after last_check_utc. Returns (child_name, mod_dt)."""
+        raw = self._propfind_with_props(remote_path, depth="1")
         tree = ElementTree.fromstring(raw)
         ns = {"d": "DAV:"}
-        for resp in tree.findall("d:response", ns):
-            for propstat in resp.findall("d:propstat", ns):
-                status = propstat.find("d:status", ns)
-                if status is None or status.text is None or "200" not in status.text:
-                    continue
-                prop = propstat.find("d:prop", ns)
-                if prop is None:
-                    continue
-                etag_el = prop.find("d:getetag", ns)
-                if etag_el is not None and etag_el.text:
-                    return etag_el.text.strip()
-        return None
+        url = f"{self.owncloud_url}/{remote_path}".rstrip("/") if remote_path else self.owncloud_url.rstrip("/")
+        base_path = "/".join(p for p in urlparse(url).path.split("/") if p) or ""
+        if base_path and not base_path.startswith("/"):
+            base_path = "/" + base_path
 
-    def upload_file(self, remote_path, bytes):
-        """Upload a local file to the OwnCloud destination
-
-        Args:
-            remote_path (str): destination path within OwnCloud
-
-        Returns:
-            bool: True if successful
-        """
-        response = requests.put(f'{self.owncloud_url}/{remote_path}', data=bytes)
-        success = response.status_code in [200, 201, 204]
-        if not success:
-            print({response.status_code} - {response.text})
-        return success
-    
-    def download_file(self, remote_path, file_type='txt'):
-        """Download txt file form remote path
-
-        Args:
-            remote_path (str): location of remote file
-            file_type (str): type of file to download
-
-        Returns:
-            str: content of the file
-        """
-        response = requests.get(f'{self.owncloud_url}/{remote_path}')
-        success = response.status_code in [200, 201, 204]
-        if not success:
-            print({response.status_code} - {response.text})
-        else:
-            if file_type == 'txt':
-                return response.text
-            elif file_type == 'json':
-                return response.json()
-            else:
-                raise ValueError(f'Invalid file type: {file_type}')
-
-    def get_new_folders(self, remote_path, previous_folder_etag=None):
-        """Use the target folder's ETag to skip work when nothing changed; otherwise list subfolders.
-
-        Store only one ETag (for the whole target folder, e.g. submissions). First we run a
-        minimal PROPFIND Depth 0 with getetag only. If the folder ETag equals previous_folder_etag,
-        we return ([], current_etag) and the caller can skip listing and processing. If it
-        changed (or no previous stored), we PROPFIND Depth 1 to list all direct subfolders and
-        return (subfolder_names, current_etag). Caller should persist current_etag (e.g. in the
-        same config as last_check_timestamp) for the next run.
-
-        Args:
-            remote_path (str): target remote folder (e.g. "submissions").
-            previous_folder_etag (str | None): ETag from last run; if None, we always list.
-
-        Returns:
-            tuple: (subfolder_names: list[str], current_folder_etag: str | None).
-                When nothing changed, subfolder_names is empty. When changed, all direct subfolder names.
-        """
-        current_etag = self._get_folder_etag(remote_path)
-        if current_etag is None:
-            # Can't get etag; fall back to listing subfolders
-            subfolders = self._list_subfolders(remote_path)
-            return subfolders, None
-        if previous_folder_etag is not None and current_etag == previous_folder_etag:
-            return [], current_etag
-        subfolders = self._list_subfolders(remote_path)
-        return subfolders, current_etag
-
-    def _list_subfolders(self, remote_path):
-        """List direct subfolder names under remote_path (collections only)."""
-        raw = self._propfind_folders_etag(remote_path)
-        tree = ElementTree.fromstring(raw)
-        ns = {"d": "DAV:"}
-        base_path = urlparse(f"{self.owncloud_url}/{remote_path}".rstrip("/")).path.rstrip("/")
-        names = []
+        result = []
         for resp in tree.findall("d:response", ns):
             href_el = resp.find("d:href", ns)
             if href_el is None or href_el.text is None:
                 continue
-            href_path = unquote(urlparse(href_el.text.strip()).path).rstrip("/")
-            if href_path == base_path or not href_path.startswith(base_path + "/"):
+            raw_href = href_el.text.strip()
+            href_path = unquote(urlparse(raw_href).path).rstrip("/")
+            # Normalize: collapse multiple slashes so we match server hrefs regardless of trailing slashes in URL
+            href_path = "/" + "/".join(p for p in href_path.split("/") if p) if href_path else ""
+            # Server may return relative hrefs for subfolders (e.g. "LSI/" instead of full path)
+            if href_path and not href_path.startswith("/"):
+                href_path = "/" + base_path.lstrip("/") + "/" + href_path.lstrip("/")
+            if not href_path:
                 continue
-            child_name = href_path[len(base_path) + 1 :].split("/")[0]
-            if "/" in href_path[len(base_path) + 1 :]:
+            prefix = (base_path.rstrip("/") + "/") if base_path else "/"
+            if href_path.rstrip("/") == base_path.rstrip("/"):
                 continue
+            if not href_path.startswith(prefix):
+                # Server may return relative href (e.g. "LSI/" or "/LSI" meaning child of requested folder)
+                segment = href_path.strip("/").split("/")[0] if href_path.strip("/") else ""
+                if not segment or "/" in href_path.strip("/"):
+                    continue
+                child_name = segment
+            else:
+                rel = href_path[len(prefix):].lstrip("/")
+                child_name = rel.split("/")[0]
+                if "/" in rel:
+                    continue
+
             for propstat in resp.findall("d:propstat", ns):
                 status = propstat.find("d:status", ns)
                 if status is None or status.text is None or "200" not in status.text:
@@ -147,9 +96,46 @@ class OwnCloudAPI:
                 resourcetype = prop.find("d:resourcetype", ns)
                 if resourcetype is None or resourcetype.find("d:collection", ns) is None:
                     continue
-                names.append(child_name)
+
+                mod_dt = None
+                mod_el = prop.find("d:getlastmodified", ns)
+                if mod_el is not None and mod_el.text:
+                    try:
+                        mod_dt = parsedate_to_datetime(mod_el.text.strip())
+                    except (ValueError, TypeError):
+                        pass
+                if mod_dt is None or mod_dt > last_check_utc:
+                    result.append((child_name, mod_dt))
                 break
-        return names
+        return result
+
+    def get_new_folders(self, last_check):
+        """Return full paths to modified site folders (lowest level) under root.
+
+        Structure: root -> hash -> (LSI | AML | logs) -> subteam -> site folders.
+        We ignore "logs". Subteam names are arbitrary.
+        Only recurse into a folder if its getlastmodified is after last_check.
+
+        Args:
+            last_check (datetime): only folders modified after this are considered.
+                Naive datetimes are treated as UTC.
+
+        Returns:
+            list[str]: full paths like "hash1/LSI/subteam1/site1", "hash2/AML/foo/siteN", etc.
+        """
+        result = []
+
+        for hash_name, _ in self._list_modified_collections("", last_check):
+            hash_path = hash_name
+            for team_name, _ in self._list_modified_collections(hash_path, last_check):
+                if team_name == "logs":
+                    continue
+                team_path = f"{hash_path}/{team_name}"
+                for subteam_name, _ in self._list_modified_collections(team_path, last_check):
+                    subteam_path = f"{team_path}/{subteam_name}"
+                    for site_name, _ in self._list_modified_collections(subteam_path, last_check):
+                        result.append(f"{subteam_path}/{site_name}")
+        return result
 
     def get_remote_files(self, remote_path):
         """Download all XML files from a remote directory (flat list, no subfolders).
@@ -199,63 +185,48 @@ class OwnCloudAPI:
             files_to_download.append(child_rel)
 
         result = []
-        headers = {"Authorization": f"Bearer {self.submissions_token}"}
         for filename in files_to_download:
             file_url = f"{base_url}/{filename}"
-            r = requests.get(file_url, headers=headers)
+            r = requests.get(file_url, headers=self._auth_headers())
             if r.status_code in (200, 201, 204):
                 result.append((filename, r.text))
             else:
                 print(f"{r.status_code} - {r.text} (skipping {filename})")
         return result
 
-    def get_remote_folders(self, remote_path):
-        """Inspect remote folder and get all subfolders
+    def upload_file(self, remote_path, bytes):
+        """Upload a local file to the OwnCloud destination
 
         Args:
-            remote_path (str): target remote destination
-
-        Returns:
-            list: list of subfolders
-        """
-        headers = {
-            "Depth": "1"  # "1" lists contents (not recursive)
-        }
-        response = requests.request("PROPFIND", f'{self.owncloud_url}/{remote_path}', 
-                                    headers=headers)
-        
-        if response.status_code not in (207, 200):
-            print(f'{response.status_code} - {response.text}')
-        else:
-            tree = ElementTree.fromstring(response.content)
-
-            namespace = {"d": "DAV:"}
-            files = [
-                elem.find("d:href", namespace).text
-                for elem in tree.findall("d:response", namespace)
-            ]
-
-            return [unquote(urlparse(file_url).path).split('/')[-2] for file_url in files]
-        
-    def check_create_folder(self, folder_name, remote_path=''):
-        """Create new folder in OwnCloud
-
-        Response code 405 is acceptable (folder already exists)
-
-        Args:
-            folder_name (str): name of the folder to be created
-            remote_path (str, optional): destination path within OwnCloud. Defaults to ''.
+            remote_path (str): destination path within OwnCloud
 
         Returns:
             bool: True if successful
         """
-        if remote_path:
-            folder_name = f'{remote_path}/{folder_name}'
-
-        # Create folder using MKCOL request
-        response = requests.request("MKCOL", f'{self.owncloud_url}/{folder_name}')
-        
-        success = response.status_code in [201, 405]
+        response = requests.put(f'{self.owncloud_url}/{remote_path}', data=bytes, headers=self._auth_headers())
+        success = response.status_code in [200, 201, 204]
         if not success:
             print({response.status_code} - {response.text})
         return success
+    
+    def download_file(self, remote_path, file_type='txt'):
+        """Download txt file form remote path
+
+        Args:
+            remote_path (str): location of remote file
+            file_type (str): type of file to download
+
+        Returns:
+            str: content of the file
+        """
+        response = requests.get(f'{self.owncloud_url}/{remote_path}', headers=self._auth_headers())
+        success = response.status_code in [200, 201, 204]
+        if not success:
+            print({response.status_code} - {response.text})
+        else:
+            if file_type == 'txt':
+                return response.text
+            elif file_type == 'json':
+                return response.json()
+            else:
+                raise ValueError(f'Invalid file type: {file_type}')
