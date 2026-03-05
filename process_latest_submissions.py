@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from APIs.google_spreadsheets import GoogleAPI
 from APIs.owncloud import OwnCloudAPI
-from processing.utils import get_last_data_timestamp, get_last_config_timestamp
+from processing.utils import get_last_data_timestamp, get_last_config_timestamp, load_config_versions
 
 
 def main():
@@ -18,16 +18,15 @@ def main():
     last_run_timestamp = get_last_data_timestamp()
     last_config_timestamp = get_last_config_timestamp()
 
+    # download new submitted sites
     subfolders = owncloud_api.get_new_folders(last_run_timestamp)
-    for subfolder in subfolders:
-        print(subfolder)
 
+    # get configs
     config_files = owncloud_api.get_new_config_files("logsheets", "downloaded_configs", last_config_timestamp)
-    for config_file in config_files:
-        print(config_file)
 
-    # get configs - try to reuse owncloud code, but can check if the folder was changed
-    # again recursively
+    # load configs
+    configs = load_config_versions("downloaded_configs")
+    
     # process the new sites
     # download files, delete them after processing
     # and push them to google sheets
