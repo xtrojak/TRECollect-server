@@ -60,24 +60,13 @@ def _get_field_value(field_data: dict[str, Any], field_type: str) -> Any:
     return field_data.get("value")
 
 
-def _extract_simple_value(field_data: dict[str, Any], field_type: str, label: str) -> Any:
+def _extract_simple_value(field_data: dict[str, Any], field_type: str) -> Any:
     """Extract a single value from XML field data for simple types. Returns None if missing."""
     if field_type == "photo":
         return field_data.get("photoFileName")
     if field_type in ["multiselect", "multiselect_image"]:
         return field_data.get("values")
-    return {label: field_data.get("value")}
-
-
-def _extract_special_raw(field_data: dict[str, Any], field_type: str, label: str) -> Any:
-    """Return raw XML structure for special types; exact handling implemented later."""
-    if field_type == "gps":
-        lat = field_data.get("gpsLatitude")
-        lon = field_data.get("gpsLongitude")
-        return {f"{label} - latitude": lat, f"{label} - longitude": lon}
-    if field_type == "table":
-        return field_data.get("tableData") or field_data.get("value") or field_data
-    return field_data
+    return field_data.get("value")
 
 
 def _extract_table_flat(
@@ -127,7 +116,7 @@ def _extract_table_flat(
     return out
 
 
-def curate_site(form_parser: FormXMLParser, config: dict[str, Any]) -> dict[str, Any]:
+def process_site(form_parser: FormXMLParser, config: dict[str, Any]) -> dict[str, Any]:
     """
     Build an output dict mapping config label -> value from the form XML.
 
@@ -147,60 +136,42 @@ def curate_site(form_parser: FormXMLParser, config: dict[str, Any]) -> dict[str,
 
         if field_type in SIMPLE_TYPES:
             field_data = _find_field_by_id(fields_list, field_id)
-            if field_data is None:
-                out[label] = None
-            else:
-                value = _extract_simple_value(field_data, field_type, label)
+            if field_data is not None:
+                value = _extract_simple_value(field_data, field_type)
                 out[label] = value
-        elif field_type in SPECIAL_TYPES:
-            field_data = _find_field_by_id(fields_list, field_id)
-            if field_data is None:
-                out[label] = None
-            elif field_type == "dynamic":
-                raw = field_data.get("dynamicInstances") or {}
-                instances = _normalize_to_list(raw.get("instance"))
-                instance_name = field_def.get("instance_name") or "Instance"
-                subfield_defs = field_def.get("subFields") or []
-                for idx, instance in enumerate(instances):
-                    subfield_list = _normalize_to_list(instance.get("subField"))
-                    # Use instance's "number" attribute + 1 for display (1-based)
-                    try:
-                        display_index = int(instance.get("number", idx)) + 1
-                    except (TypeError, ValueError):
-                        display_index = idx + 1
-                    for sub_def in subfield_defs:
-                        sub_id = sub_def.get("id")
-                        sub_label = sub_def.get("label") or sub_id
-                        sub_type = sub_def.get("type") or "text"
-                        sub_data = _find_field_by_id(subfield_list, sub_id)
-                        key_base = f"{label} - {instance_name} {display_index} - {sub_label}"
-                        if sub_type == "gps" and sub_data:
-                            out[f"{key_base} - latitude"] = sub_data.get("gpsLatitude")
-                            out[f"{key_base} - longitude"] = sub_data.get("gpsLongitude")
-                        else:
-                            out[key_base] = _get_field_value(sub_data, sub_type) if sub_data else None
-            elif field_type == "table":
-                row_names = field_def.get("rows") or []
-                column_names = field_def.get("columns") or []
-                table_flat = _extract_table_flat(field_data, label, row_names, column_names)
-                out.update(table_flat)
-            else:
-                raw = _extract_special_raw(field_data, field_type, label)
-                out[label] = raw
-
         else:
-            # Unknown type: treat as simple and try "value"
             field_data = _find_field_by_id(fields_list, field_id)
-            out[label] = _extract_simple_value(field_data, field_type, label) if field_data else None
+            if field_data is not None:
+                if field_type == "dynamic":
+                    raw = field_data.get("dynamicInstances") or {}
+                    instances = _normalize_to_list(raw.get("instance"))
+                    instance_name = field_def.get("instance_name") or "Instance"
+                    subfield_defs = field_def.get("subFields") or []
+                    for idx, instance in enumerate(instances):
+                        subfield_list = _normalize_to_list(instance.get("subField"))
+                        # Use instance's "number" attribute + 1 for display (1-based)
+                        try:
+                            display_index = int(instance.get("number", idx)) + 1
+                        except (TypeError, ValueError):
+                            display_index = idx + 1
+                        for sub_def in subfield_defs:
+                            sub_id = sub_def.get("id")
+                            sub_label = sub_def.get("label") or sub_id
+                            sub_type = sub_def.get("type") or "text"
+                            sub_data = _find_field_by_id(subfield_list, sub_id)
+                            key_base = f"{label} - {instance_name} {display_index} - {sub_label}"
+                            if sub_type == "gps" and sub_data:
+                                out[f"{key_base} - latitude"] = sub_data.get("gpsLatitude")
+                                out[f"{key_base} - longitude"] = sub_data.get("gpsLongitude")
+                            else:
+                                out[key_base] = _get_field_value(sub_data, sub_type) if sub_data else None
+                elif field_type == "table":
+                    row_names = field_def.get("rows") or []
+                    column_names = field_def.get("columns") or []
+                    table_flat = _extract_table_flat(field_data, label, row_names, column_names)
+                    out.update(table_flat)
+                elif field_type == "gps":
+                    out[f"{label} - latitude"] = field_data.get("gpsLatitude")
+                    out[f"{label} - longitude"] = field_data.get("gpsLongitude")
 
     return out
-
-
-def process_site(files):
-    results = []
-
-    # curate site
-    # add the results to the results list
-    # consider special cases, such as merging LSI 14 scoring sheets
-
-    return results
