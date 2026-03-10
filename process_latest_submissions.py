@@ -14,11 +14,14 @@ from processing.xml import FormXMLParser
 from processing.process import process_site
 
 
-def main():
+def main(args):
     load_dotenv('CONFIG.env')
 
-    google_api = GoogleAPI()
     owncloud_api = OwnCloudAPI()
+
+    google_api = None
+    if not args.local:
+        google_api = GoogleAPI()
 
     now = datetime.datetime.now(ZoneInfo("Europe/Paris"))
     last_run_timestamp = get_last_data_timestamp()
@@ -69,12 +72,31 @@ def main():
 
             processed_df = pd.DataFrame(submissions)
 
-            # store to Google sheet
-            print('\tStoring submissions in Google sheets...')
-            row_dicts = processed_df.to_dict(orient="records")
+            if args.local:
+                # Store to a local Excel file (one sheet per logsheet name)
+                print(f'\tStoring submissions locally in {args.local}...')
+                sheet_name = logsheet_names[form_id]
+                # Append/replace sheet if file exists, otherwise create new file
+                if os.path.exists(args.local):
+                    mode = "a"
+                    if_sheet_exists = "replace"
+                else:
+                    mode = "w"
+                    if_sheet_exists = None
+                with pd.ExcelWriter(
+                    args.local,
+                    engine="openpyxl",
+                    mode=mode,
+                    if_sheet_exists=if_sheet_exists,
+                ) as writer:
+                    processed_df.to_excel(writer, sheet_name=sheet_name, index=False)
+            else:
+                # store to Google sheet
+                print('\tStoring submissions in Google sheets...')
+                row_dicts = processed_df.to_dict(orient="records")
 
-            google_api.add_rows(raw_sheet_id, logsheet_names[form_id], row_dicts)
-            google_api.add_rows(raw_sheet_backup_id, logsheet_names[form_id], row_dicts)
+                google_api.add_rows(raw_sheet_id, logsheet_names[form_id], row_dicts)
+                google_api.add_rows(raw_sheet_backup_id, logsheet_names[form_id], row_dicts)
 
         # and update the last run timestamp
         print(f'>>> Updating last run timestamp...')
@@ -87,6 +109,11 @@ if __name__ == '__main__':
 
     args_parser._action_groups.pop()
     optional = args_parser.add_argument_group('optional arguments')
-    
+    optional.add_argument(
+        '--local',
+        metavar='FILENAME',
+        help='Store output into a local Excel file instead of Google Sheets',
+    )
+
     args = args_parser.parse_args()
-    main()
+    main(args)
