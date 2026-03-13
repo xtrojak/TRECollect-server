@@ -3,6 +3,10 @@ import json
 import os
 
 
+def is_debug_submission(location):
+    return location.startswith("dev-debug/")
+
+
 def save_file(filename, content):
     with open(filename, 'w') as f:
         f.write(content)
