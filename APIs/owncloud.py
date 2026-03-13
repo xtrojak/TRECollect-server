@@ -1,7 +1,7 @@
 import base64
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Optional
 from urllib.parse import unquote, urlparse
@@ -48,7 +48,7 @@ class OwnCloudAPI:
         return response.content
 
     def _list_modified_collections(self, remote_path: str, last_check_utc) -> list[tuple[str, Optional[datetime]]]:
-        """List direct child folders whose getlastmodified is after last_check_utc. Returns (child_name, mod_dt)."""
+        """List direct child folders whose getlastmodified is after last_check_utc (both in UTC). Returns (child_name, mod_dt)."""
         raw = self._propfind_with_props(remote_path, depth="1")
         tree = ElementTree.fromstring(raw)
         ns = {"d": "DAV:"}
@@ -102,8 +102,11 @@ class OwnCloudAPI:
                 if mod_el is not None and mod_el.text:
                     try:
                         parsed = parsedate_to_datetime(mod_el.text.strip())
-                        # Compare using naive datetimes (drop timezone info if present)
-                        mod_dt = parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
+                        # Normalize to UTC so comparisons are correct regardless of server timezone.
+                        if parsed.tzinfo is None:
+                            mod_dt = parsed.replace(tzinfo=timezone.utc)
+                        else:
+                            mod_dt = parsed.astimezone(timezone.utc)
                     except (ValueError, TypeError):
                         pass
                 if mod_dt is None or mod_dt > last_check_utc:
@@ -125,10 +128,11 @@ class OwnCloudAPI:
         Returns:
             list[str]: full paths like "hash1/LSI/subteam1/site1", "hash2/AML/foo/siteN", etc.
         """
+        # Always compare in UTC, using timezone-aware datetimes.
         if last_check.tzinfo is not None:
-            last_check_utc = last_check.astimezone().replace(tzinfo=None)
+            last_check_utc = last_check.astimezone(timezone.utc)
         else:
-            last_check_utc = last_check
+            last_check_utc = last_check.replace(tzinfo=timezone.utc)
         result = []
 
         for hash_name, _ in self._list_modified_collections("", last_check_utc):
