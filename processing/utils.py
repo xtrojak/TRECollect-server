@@ -33,6 +33,14 @@ def get_last_config_timestamp():
     return datetime.datetime.fromisoformat(read_file('last_config.txt'))
 
 
+def save_last_statistics_timestamp(now):
+    save_file('last_statistics.txt', now.replace(microsecond=0).isoformat())
+
+
+def get_last_statistics_timestamp():
+    return datetime.datetime.fromisoformat(read_file('last_statistics.txt'))
+
+
 def load_config_versions(local_root: str) -> dict[str, dict[str, dict]]:
     """Load downloaded config JSONs into a nested dict.
 

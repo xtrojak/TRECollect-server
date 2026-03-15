@@ -13,7 +13,6 @@ from processing.utils import get_last_data_timestamp, get_last_config_timestamp,
 from processing.xml import FormXMLParser
 from processing.process import process_site
 from curation.curate_submissions import run_curation
-from curation.statistics import compute_and_save_statistics
 
 
 def main(args):

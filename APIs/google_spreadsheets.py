@@ -1,9 +1,10 @@
-import os
 import pandas as pd
 import gspread
 from gspread.exceptions import WorksheetNotFound
 from oauth2client.service_account import ServiceAccountCredentials
 from typing import Optional, List
+from googleapiclient.discovery import build
+from google.oauth2.service_account import Credentials
 
 from APIs.utils import rate_limited_with_retry, clean_up_nulls, create_keyfile_dict
 
@@ -13,6 +14,14 @@ class GoogleAPI:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_dict(create_keyfile_dict(), scope)
         self.client = gspread.authorize(creds)
+
+    def get_modified_time(self, file_key):
+        scopes = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(create_keyfile_dict(), scopes)
+        drive = build("drive", "v3", credentials=creds)
+
+        meta = drive.files().get(fileId=file_key, fields="modifiedTime").execute()
+        return meta['modifiedTime']
 
     @staticmethod
     def _sheet_value(val):
