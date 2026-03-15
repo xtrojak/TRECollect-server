@@ -13,6 +13,7 @@ from processing.utils import get_last_data_timestamp, get_last_config_timestamp,
 from processing.xml import FormXMLParser
 from processing.process import process_site
 from curation.curate_submissions import run_curation
+from curation.statistics import compute_and_save_statistics
 
 
 def main(args):
@@ -112,7 +113,9 @@ def main(args):
             owncloud_images_token = os.environ.get('OWNCLOUD_IMAGES_TOKEN')
             if lsi_target_sheet_id and owncloud_images_token:
                 print('>>> Running curation on production data...')
-                run_curation(data, logsheet_names, google_api, lsi_target_sheet_id, owncloud_images_token)
+                full_snapshot = run_curation(data, logsheet_names, google_api, lsi_target_sheet_id, owncloud_images_token)
+                if full_snapshot:
+                    compute_and_save_statistics(full_snapshot)
         else:
             print('>>> No production data to curate.')
 

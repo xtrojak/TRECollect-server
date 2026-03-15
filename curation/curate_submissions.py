@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
 
@@ -145,18 +145,46 @@ def write_curated_rows(
             google_api.add_rows(target_sheet_id, sheet_name, row_dicts)
 
 
+def _build_full_snapshot(
+    rows_to_write: Dict[str, pd.DataFrame],
+    overwrite_sheets: Set[str],
+    existing_sheets: Dict[str, pd.DataFrame],
+) -> Dict[str, pd.DataFrame]:
+    """
+    Build a local snapshot of the target spreadsheet after write.
+
+    - Overwrite sheets: content is exactly rows_to_write[sheet].
+    - Append sheets: content is existing_sheets[sheet] + rows_to_write[sheet].
+    """
+    full: Dict[str, pd.DataFrame] = {}
+    for sheet_name, new_df in rows_to_write.items():
+        if sheet_name in overwrite_sheets:
+            full[sheet_name] = new_df.copy()
+        else:
+            existing = existing_sheets.get(sheet_name, pd.DataFrame())
+            if existing.empty:
+                full[sheet_name] = new_df.copy()
+            else:
+                full[sheet_name] = pd.concat([existing, new_df], ignore_index=True)
+    return full
+
+
 def run_curation(
     production_data: Dict[str, List[Dict[str, Any]]],
     logsheet_names: Dict[str, str],
     google_api: GoogleAPI,
     target_sheet_id: str,
     owncloud_images_token: str,
-) -> None:
+) -> Optional[Dict[str, pd.DataFrame]]:
     """
     Curate production data (in-memory) and write to the target spreadsheet.
 
     production_data: form_id -> list of submission row dicts (same as in process_latest_submissions).
     logsheet_names: form_id -> sheet name (e.g. "LSI 1", "LSI 14-1").
+
+    Returns:
+        Full snapshot of the target spreadsheet after write (sheet_name -> DataFrame),
+        or None if nothing was written (no data / no target).
     """
     raw_rows: Dict[str, pd.DataFrame] = {}
     for form_id, rows in production_data.items():
@@ -167,11 +195,16 @@ def run_curation(
 
     curated = curate_rows_per_sheet(raw_rows, owncloud_images_token)
     rules = get_output_rules()
-    sheets_to_load = sheets_to_load_for_rules(rules)
-    existing_sheets = load_existing_sheets(google_api, target_sheet_id, sheets_to_load)
+    sheets_for_rules = sheets_to_load_for_rules(rules)
+    # Load existing content for merge targets and for every curated sheet (needed for merge rules and full snapshot).
+    all_sheet_names = sheets_for_rules | set(curated.keys())
+    existing_sheets = load_existing_sheets(google_api, target_sheet_id, all_sheet_names)
 
     rows_to_write, overwrite_sheets = apply_output_rules(curated, existing_sheets, rules)
     write_curated_rows(google_api, target_sheet_id, rows_to_write, overwrite_sheets)
+
+    full_snapshot = _build_full_snapshot(rows_to_write, overwrite_sheets, existing_sheets)
+    return full_snapshot
 
 
 if __name__ == "__main__":
