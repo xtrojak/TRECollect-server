@@ -113,9 +113,7 @@ def main(args):
             owncloud_images_token = os.environ.get('OWNCLOUD_IMAGES_TOKEN')
             if lsi_target_sheet_id and owncloud_images_token:
                 print('>>> Running curation on production data...')
-                full_snapshot = run_curation(data, logsheet_names, google_api, lsi_target_sheet_id, owncloud_images_token)
-                if full_snapshot:
-                    compute_and_save_statistics(full_snapshot, configs)
+                run_curation(data, logsheet_names, google_api, lsi_target_sheet_id, owncloud_images_token)
         else:
             print('>>> No production data to curate.')
 

@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from gspread.exceptions import WorksheetNotFound
 from oauth2client.service_account import ServiceAccountCredentials
+from typing import Optional, List
 
 from APIs.utils import rate_limited_with_retry, clean_up_nulls, create_keyfile_dict
 
@@ -164,6 +165,23 @@ class GoogleAPI:
         except Exception as e:
             print(f"Error getting worksheets: {e}")
             return []
+
+    def read_tables(self, file_key, sheet_names: Optional[List[str]] = None):
+        """Load specified worksheets in the spreadsheet as DataFrames.
+        
+        Args:
+            file_key (str): identifier of Google sheet
+            sheet_names (list): list of worksheet names to load
+        Returns:
+            dict: worksheet name -> pandas DataFrame
+        """
+        if not file_key:
+            return {}
+        if sheet_names:
+            return {name: self.read_table(file_key, name) for name in sheet_names}
+        else:
+            sheet_names = self.get_all_worksheets(file_key)
+            return {name: self.read_table(file_key, name) for name in sheet_names}
 
     @rate_limited_with_retry()
     def clear_worksheet_data(self, file_key, worksheet):
