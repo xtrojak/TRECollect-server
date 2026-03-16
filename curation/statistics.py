@@ -6,6 +6,7 @@ For development: full_snapshot can be saved/loaded as pickle to avoid API calls.
 
 from __future__ import annotations
 from typing import Dict, Set
+import json
 import pandas as pd
 
 
@@ -63,21 +64,44 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
     if not per_site:
         return
 
-    sheet_names = sorted(
-        name for name, df in data.items()
-        if not df.empty and "Site ID" in df.columns
-    )
-    columns = ["Site ID"] + sheet_names
-    rows = []
-    for site_id in sorted(per_site.keys()):
-        row = {"Site ID": site_id}
-        for sh in sheet_names:
-            row[sh] = per_site[site_id].get(sh, 0)
-        rows.append(row)
+    # Load expected sheet counts per site (per sheet) from JSON.
+    try:
+        with open("curation/expected_numbers.json", encoding="utf-8") as f:
+            expected_raw = json.load(f)
+    except FileNotFoundError:
+        expected_raw = {}
 
-    out_df = pd.DataFrame(rows, columns=columns)
-    out_df.to_csv("statistics/statistics.csv", index=False)
-    print(f">>> Statistics written to statistics/statistics.csv")
+    expected_counts = {k: int(v) for k, v in expected_raw.items()}
+
+    # Build markdown overview per site.
+    lines: list[str] = []
+    lines.append("# Sites overview\n")
+    sheet_names = sorted(expected_counts.keys())
+
+    for site_id in sorted(per_site.keys()):
+        issues: list[str] = []
+        for sheet in sheet_names:
+            expected = expected_counts.get(sheet, 0)
+            actual = per_site[site_id].get(sheet, 0)
+            if actual == expected:
+                continue
+            diff = actual - expected
+            if diff < 0:
+                issues.append(f"- `{sheet}`: missing {-diff} (expected {expected}, found {actual})")
+            elif diff > 0:
+                issues.append(f"- `{sheet}`: extra {diff} (expected {expected}, found {actual})")
+
+        if not issues:
+            lines.append(f"## `{site_id}` ✓\n")
+            lines.append("All sheets present with expected counts.\n")
+        else:
+            lines.append(f"## `{site_id}` ✗\n")
+            lines.extend(issues)
+            lines.append("")  # blank line
+
+    with open("statistics/statistics.md", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip() + "\n")
+    print(">>> Site overview written to statistics/statistics.md")
 
     # Missing barcodes: per site, per sheet, list of barcode column names that are empty (in at least one row).
     missing_per_site: Dict[str, Dict[str, list]] = {}
@@ -104,7 +128,6 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
 
     if missing_per_site:
         with open("statistics/missing_barcodes.md", "w", encoding="utf-8") as f:
-            f.write("# Missing barcode warnings\n\n")
             for site_id in sorted(missing_per_site.keys()):
                 f.write(f"## Site ID: {site_id}\n\n")
                 for sheet_name in sorted(missing_per_site[site_id].keys()):
@@ -147,16 +170,15 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
 
     if duplicates:
         with open("statistics/duplicated_barcodes.md", "w", encoding="utf-8") as f:
-            f.write("# Duplicated barcode errors\n\n")
             for barcode_val in sorted(duplicates.keys()):
-                f.write(f"## Barcode `{barcode_val}`\n\n")
+                f.write(f"`{barcode_val}`\n\n")
                 for sheet_name in sorted(duplicates[barcode_val].keys()):
                     for col in sorted(duplicates[barcode_val][sheet_name].keys()):
                         site_ids = sorted({sid for sid in duplicates[barcode_val][sheet_name][col] if sid})
                         if not site_ids:
                             continue
                         sites_str = ", ".join(f"`{sid}`" for sid in site_ids)
-                        f.write(f"- Sheet `{sheet_name}`, column `{col}`: Site ID(s) {sites_str}\n")
-                f.write("\n")
+                        f.write(f"`{sheet_name}` - `{col}` - {sites_str}\n")
+                f.write("\n\n")
         print(">>> Duplicated barcode errors written to statistics/duplicated_barcodes.md")
  
