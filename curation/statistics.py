@@ -75,6 +75,9 @@ def _compute_site_overview(data: Dict[str, pd.DataFrame]) -> None:
             per_site[sid][sheet_name] = count
 
     if not per_site:
+        with open("statistics/statistics.md", "w", encoding="utf-8") as f:
+            pass
+        print(">>> Site overview written to statistics/statistics.md (no sites)")
         return
 
     try:
@@ -144,10 +147,11 @@ def _compute_missing_barcodes(
                 missing_per_site[sid] = {}
             missing_per_site[sid][sheet_name] = sorted(missing)
 
-    if not missing_per_site:
-        return
-
     with open("statistics/missing_barcodes.md", "w", encoding="utf-8") as f:
+        if not missing_per_site:
+            print(">>> Missing barcode warnings written to statistics/missing_barcodes.md (none)")
+            return
+
         for site_id in sorted(missing_per_site.keys()):
             f.write(f"## Site ID: {site_id}\n\n")
             for sheet_name in sorted(missing_per_site[site_id].keys()):
@@ -191,10 +195,11 @@ def _compute_duplicated_barcodes(
         if total_occurrences > 1:
             filtered_duplicates[barcode_val] = sheets
 
-    if not filtered_duplicates:
-        return
-
     with open("statistics/duplicated_barcodes.md", "w", encoding="utf-8") as f:
+        if not filtered_duplicates:
+            print(">>> Duplicated barcode errors written to statistics/duplicated_barcodes.md (none)")
+            return
+
         for barcode_val in sorted(filtered_duplicates.keys()):
             f.write(f"### {barcode_val}\n\n")
             for sheet_name in sorted(filtered_duplicates[barcode_val].keys()):
@@ -272,6 +277,10 @@ def _compute_coordinates(data: Dict[str, pd.DataFrame]) -> None:
                 _add_row(site_id, label, lat, lon)
 
     if not rows:
+        pd.DataFrame(columns=["label", "Site ID", "latitude", "longitude"]).to_csv(
+            "statistics/coords.csv", index=False
+        )
+        print(">>> Coordinates written to statistics/coords.csv (none)")
         return
 
     df_out = pd.DataFrame(rows)
