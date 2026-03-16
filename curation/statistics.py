@@ -112,4 +112,51 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
                     f.write(f"### {sheet_name}\n\n")
                     f.write(", ".join(f"`{col}`" for col in missing) + "\n\n")
         print(">>> Missing barcode warnings written to statistics/missing_barcodes.md")
+
+    # Duplicated barcodes: per barcode value, list all locations (sheet, column, site IDs).
+    duplicates: Dict[str, Dict[str, Dict[str, list]]] = {}
+    for sheet_name, df in data.items():
+        if df.empty or "Site ID" not in df.columns:
+            continue
+        barcode_cols = barcode_by_sheet.get(sheet_name, set())
+        if not barcode_cols:
+            continue
+        barcode_cols = [c for c in barcode_cols if c in df.columns]
+        if not barcode_cols:
+            continue
+        site_col = df["Site ID"].astype(str).str.strip()
+        for col in barcode_cols:
+            values = df[col].astype(str).str.strip()
+            # Ignore empty values
+            values_nonempty = values[values != ""]
+            if values_nonempty.empty:
+                continue
+            counts = values_nonempty.value_counts()
+            dup_values = counts[counts > 1].index
+            if not len(dup_values):
+                continue
+            for barcode_val in dup_values:
+                mask = values == barcode_val
+                site_ids = site_col[mask].dropna().str.strip()
+                site_ids = sorted({sid for sid in site_ids if sid})
+                if not site_ids:
+                    continue
+                # Organize as barcode_val -> sheet_name -> column_name -> [site_ids]
+                for sid in site_ids:
+                    duplicates.setdefault(barcode_val, {}).setdefault(sheet_name, {}).setdefault(col, []).append(sid)
+
+    if duplicates:
+        with open("statistics/duplicated_barcodes.md", "w", encoding="utf-8") as f:
+            f.write("# Duplicated barcode errors\n\n")
+            for barcode_val in sorted(duplicates.keys()):
+                f.write(f"## Barcode `{barcode_val}`\n\n")
+                for sheet_name in sorted(duplicates[barcode_val].keys()):
+                    for col in sorted(duplicates[barcode_val][sheet_name].keys()):
+                        site_ids = sorted({sid for sid in duplicates[barcode_val][sheet_name][col] if sid})
+                        if not site_ids:
+                            continue
+                        sites_str = ", ".join(f"`{sid}`" for sid in site_ids)
+                        f.write(f"- Sheet `{sheet_name}`, column `{col}`: Site ID(s) {sites_str}\n")
+                f.write("\n")
+        print(">>> Duplicated barcode errors written to statistics/duplicated_barcodes.md")
  
