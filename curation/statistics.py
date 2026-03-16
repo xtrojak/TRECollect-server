@@ -6,6 +6,7 @@ For development: full_snapshot can be saved/loaded as pickle to avoid API calls.
 
 from __future__ import annotations
 from typing import Dict, Set
+import json
 import pandas as pd
 
 
@@ -37,16 +38,7 @@ def _is_empty(val) -> bool:
     return str(val).strip() == ""
 
 
-def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str, dict]) -> None:
-    """
-    Compute statistics and summary from the full curated spreadsheet snapshot
-    and write results to a CSV file.
-
-    data: sheet_name -> DataFrame (complete contents of each sheet after curation).
-    configs: reserved for later use.
-    """
-    barcode_by_sheet = _barcode_columns_per_sheet(configs) if configs else {}
-
+def _compute_site_overview(data: Dict[str, pd.DataFrame]) -> None:
     # Per site_id: which sheets and how many rows (sheet_name -> row count).
     per_site: Dict[str, Dict[str, int]] = {}
 
@@ -63,23 +55,47 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
     if not per_site:
         return
 
-    sheet_names = sorted(
-        name for name, df in data.items()
-        if not df.empty and "Site ID" in df.columns
-    )
-    columns = ["Site ID"] + sheet_names
-    rows = []
+    try:
+        with open("curation/expected_numbers.json", encoding="utf-8") as f:
+            expected_raw = json.load(f)
+    except FileNotFoundError:
+        expected_raw = {}
+
+    expected_counts = {k: int(v) for k, v in expected_raw.items()}
+
+    lines: list[str] = []
+    sheet_names = sorted(expected_counts.keys())
+
     for site_id in sorted(per_site.keys()):
-        row = {"Site ID": site_id}
-        for sh in sheet_names:
-            row[sh] = per_site[site_id].get(sh, 0)
-        rows.append(row)
+        issues: list[str] = []
+        for sheet in sheet_names:
+            expected = expected_counts.get(sheet, 0)
+            actual = per_site[site_id].get(sheet, 0)
+            if actual == expected:
+                continue
+            diff = actual - expected
+            if diff < 0:
+                issues.append(f"- `{sheet}`: missing {-diff} (expected {expected}, found {actual})")
+            elif diff > 0:
+                issues.append(f"- `{sheet}`: extra {diff} (expected {expected}, found {actual})")
 
-    out_df = pd.DataFrame(rows, columns=columns)
-    out_df.to_csv("statistics/statistics.csv", index=False)
-    print(f">>> Statistics written to statistics/statistics.csv")
+        if not issues:
+            lines.append(f"## {site_id} ✓\n")
+            lines.append("All sheets present with expected counts.\n")
+        else:
+            lines.append(f"## {site_id} ✗\n")
+            lines.extend(issues)
+            lines.append("")
 
-    # Missing barcodes: per site, per sheet, list of barcode column names that are empty (in at least one row).
+    with open("statistics/statistics.md", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).rstrip() + "\n")
+    print(">>> Site overview written to statistics/statistics.md")
+
+
+def _compute_missing_barcodes(
+    data: Dict[str, pd.DataFrame],
+    barcode_by_sheet: Dict[str, Set[str]],
+) -> None:
     missing_per_site: Dict[str, Dict[str, list]] = {}
     for sheet_name, df in data.items():
         if df.empty or "Site ID" not in df.columns:
@@ -87,7 +103,6 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
         barcode_cols = barcode_by_sheet.get(sheet_name, set())
         if not barcode_cols:
             continue
-        # Only consider barcode columns that exist in the DataFrame.
         barcode_cols = [c for c in barcode_cols if c in df.columns]
         if not barcode_cols:
             continue
@@ -102,18 +117,23 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
                 missing_per_site[sid] = {}
             missing_per_site[sid][sheet_name] = sorted(missing)
 
-    if missing_per_site:
-        with open("statistics/missing_barcodes.md", "w", encoding="utf-8") as f:
-            f.write("# Missing barcode warnings\n\n")
-            for site_id in sorted(missing_per_site.keys()):
-                f.write(f"## Site ID: {site_id}\n\n")
-                for sheet_name in sorted(missing_per_site[site_id].keys()):
-                    missing = missing_per_site[site_id][sheet_name]
-                    f.write(f"### {sheet_name}\n\n")
-                    f.write(", ".join(f"`{col}`" for col in missing) + "\n\n")
-        print(">>> Missing barcode warnings written to statistics/missing_barcodes.md")
+    if not missing_per_site:
+        return
 
-    # Duplicated barcodes: per barcode value, list all locations (sheet, column, site IDs).
+    with open("statistics/missing_barcodes.md", "w", encoding="utf-8") as f:
+        for site_id in sorted(missing_per_site.keys()):
+            f.write(f"## Site ID: {site_id}\n\n")
+            for sheet_name in sorted(missing_per_site[site_id].keys()):
+                missing = missing_per_site[site_id][sheet_name]
+                f.write(f"* **{sheet_name}**: ")
+                f.write(", ".join(f"`{col}`" for col in missing) + "\n\n")
+    print(">>> Missing barcode warnings written to statistics/missing_barcodes.md")
+
+
+def _compute_duplicated_barcodes(
+    data: Dict[str, pd.DataFrame],
+    barcode_by_sheet: Dict[str, Set[str]],
+) -> None:
     duplicates: Dict[str, Dict[str, Dict[str, list]]] = {}
     for sheet_name, df in data.items():
         if df.empty or "Site ID" not in df.columns:
@@ -127,7 +147,6 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
         site_col = df["Site ID"].astype(str).str.strip()
         for col in barcode_cols:
             values = df[col].astype(str).str.strip()
-            # Ignore empty values
             values_nonempty = values[values != ""]
             if values_nonempty.empty:
                 continue
@@ -141,22 +160,108 @@ def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str
                 site_ids = sorted({sid for sid in site_ids if sid})
                 if not site_ids:
                     continue
-                # Organize as barcode_val -> sheet_name -> column_name -> [site_ids]
                 for sid in site_ids:
                     duplicates.setdefault(barcode_val, {}).setdefault(sheet_name, {}).setdefault(col, []).append(sid)
 
-    if duplicates:
-        with open("statistics/duplicated_barcodes.md", "w", encoding="utf-8") as f:
-            f.write("# Duplicated barcode errors\n\n")
-            for barcode_val in sorted(duplicates.keys()):
-                f.write(f"## Barcode `{barcode_val}`\n\n")
-                for sheet_name in sorted(duplicates[barcode_val].keys()):
-                    for col in sorted(duplicates[barcode_val][sheet_name].keys()):
-                        site_ids = sorted({sid for sid in duplicates[barcode_val][sheet_name][col] if sid})
-                        if not site_ids:
-                            continue
-                        sites_str = ", ".join(f"`{sid}`" for sid in site_ids)
-                        f.write(f"- Sheet `{sheet_name}`, column `{col}`: Site ID(s) {sites_str}\n")
-                f.write("\n")
-        print(">>> Duplicated barcode errors written to statistics/duplicated_barcodes.md")
+    if not duplicates:
+        return
+
+    with open("statistics/duplicated_barcodes.md", "w", encoding="utf-8") as f:
+        for barcode_val in sorted(duplicates.keys()):
+            f.write(f"### {barcode_val}\n\n")
+            for sheet_name in sorted(duplicates[barcode_val].keys()):
+                for col in sorted(duplicates[barcode_val][sheet_name].keys()):
+                    site_ids = sorted({sid for sid in duplicates[barcode_val][sheet_name][col] if sid})
+                    if not site_ids:
+                        continue
+                    sites_str = ", ".join(f"`{sid}`" for sid in site_ids)
+                    f.write(f"* `{sheet_name}` | `{col}` | {sites_str}\n")
+            f.write("\n\n")
+    print(">>> Duplicated barcode errors written to statistics/duplicated_barcodes.md")
+
+
+def _compute_coordinates(data: Dict[str, pd.DataFrame]) -> None:
+    rows: list[dict] = []
+
+    def _add_row(site_id: str, label: str, lat, lon) -> None:
+        if _is_empty(lat) or _is_empty(lon):
+            return
+        rows.append(
+            {
+                "label": label,
+                "Site ID": site_id,
+                "latitude": lat,
+                "longitude": lon,
+            }
+        )
+
+    lsi3 = data.get("LSI 3")
+    if lsi3 is not None and not lsi3.empty and "Site ID" in lsi3.columns:
+        for _, row in lsi3.iterrows():
+            site_id = str(row.get("Site ID", "")).strip()
+            if not site_id:
+                continue
+            lat = row.get("Soil square GPS coordinates - latitude")
+            lon = row.get("Soil square GPS coordinates - longitude")
+            transect = str(row.get("Transect number", "")).strip()
+            square = str(row.get("Square number", "")).strip()
+            label = f"{site_id}: soil transect {transect} square {square}"
+            _add_row(site_id, label, lat, lon)
+
+    lsi5 = data.get("LSI 5")
+    if lsi5 is not None and not lsi5.empty and "Site ID" in lsi5.columns:
+        for _, row in lsi5.iterrows():
+            site_id = str(row.get("Site ID", "")).strip()
+            if not site_id:
+                continue
+            lat = row.get("Sediment triangle GPS coordinates - latitude")
+            lon = row.get("Sediment triangle GPS coordinates - longitude")
+            transect = str(row.get("Transect number", "")).strip()
+            triangle = str(row.get("Triangle number", "")).strip()
+            label = f"{site_id}: sediment transect {transect} triangle {triangle}"
+            _add_row(site_id, label, lat, lon)
+
+    lsi8 = data.get("LSI 8")
+    if lsi8 is not None and not lsi8.empty and "Site ID" in lsi8.columns:
+        for col in lsi8.columns:
+            if not col.startswith("Water collection - Carboy ") or "GPS coordinates - latitude" not in col:
+                continue
+            try:
+                prefix, rest = col.split("Carboy ", 1)
+                carboy_num = rest.split(" -", 1)[0].strip()
+            except ValueError:
+                continue
+            lon_col = col.replace("GPS coordinates - latitude", "GPS coordinates - longitude")
+            if lon_col not in lsi8.columns:
+                continue
+            for _, row in lsi8.iterrows():
+                site_id = str(row.get("Site ID", "")).strip()
+                if not site_id:
+                    continue
+                lat = row.get(col)
+                lon = row.get(lon_col)
+                label = f"{site_id}: shoreline transect - Carboy {carboy_num}"
+                _add_row(site_id, label, lat, lon)
+
+    if not rows:
+        return
+
+    df_out = pd.DataFrame(rows)
+    df_out.to_csv("statistics/coords.csv", index=False)
+    print(">>> Coordinates written to statistics/coords.csv")
+
+
+def compute_and_save_statistics(data: Dict[str, pd.DataFrame], configs: Dict[str, dict]) -> None:
+    """
+    Orchestrate computation of statistics and derived summaries.
+
+    data: sheet_name -> DataFrame (complete contents of each sheet after curation).
+    configs: configuration dicts used for determining barcode columns.
+    """
+    barcode_by_sheet = _barcode_columns_per_sheet(configs) if configs else {}
+
+    _compute_site_overview(data)
+    _compute_missing_barcodes(data, barcode_by_sheet)
+    _compute_duplicated_barcodes(data, barcode_by_sheet)
+    _compute_coordinates(data)
  

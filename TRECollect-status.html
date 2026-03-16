@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="refresh" content="300" />
+  <title>TRECollect – Statistics Overview</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f7;
+      color: #222;
+    }
+    header {
+      padding: 1rem 1.5rem;
+      background: #1f2933;
+      color: #f9fafb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.4rem;
+    }
+    .header-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: #bfdbfe;
+      text-decoration: none;
+      font-size: 0.9rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(191, 219, 254, 0.4);
+      background: rgba(15, 23, 42, 0.5);
+    }
+    .header-link:hover {
+      background: rgba(15, 23, 42, 0.8);
+      border-color: rgba(191, 219, 254, 0.8);
+    }
+    .header-link svg {
+      width: 16px;
+      height: 16px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+      padding: 1rem 1.5rem 2rem;
+    }
+    .panel {
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel header {
+      background: none;
+      color: inherit;
+      padding: 0.75rem 1rem 0.5rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .panel header h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+    .panel header p {
+      margin: 0.15rem 0 0;
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    .panel-content {
+      padding: 0.75rem 1rem 1rem;
+      overflow: auto;
+      max-height: 320px;
+      font-size: 0.85rem;
+      background: #f9fafb;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    th, td {
+      padding: 0.25rem 0.4rem;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #f3f4f6;
+      z-index: 1;
+    }
+    .status-ok {
+      color: #15803d;
+      font-weight: 600;
+    }
+    .status-missing {
+      color: #b91c1c;
+      font-weight: 600;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    details {
+      margin: 0 1.5rem 1.5rem;
+    }
+    details summary {
+      cursor: pointer;
+      font-weight: 600;
+      padding: 0.5rem 0;
+    }
+    .logs {
+      background: #111827;
+      color: #e5e7eb;
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      max-height: 260px;
+      overflow: auto;
+      font-size: 0.8rem;
+    }
+    .logs pre {
+      color: inherit;
+    }
+    /* Tighten vertical spacing in rendered markdown */
+    .panel-content h2,
+    .panel-content h3,
+    .panel-content h4 {
+      margin: 0.3rem 0 0.15rem;
+    }
+    .panel-content p {
+      margin: 0.15rem 0;
+    }
+    .panel-content ul {
+      margin: 0.15rem 0 0.15rem 1.1rem;
+      padding: 0;
+    }
+    .panel-content li {
+      margin: 0.05rem 0;
+    }
+    .error {
+      color: #b91c1c;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TRECollect – Sites Overview</h1>
+    <a
+      id="sheets-link"
+      class="header-link"
+      href="#"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="#0F9D58" d="M6 2h9l5 5v15H6z"/>
+        <path fill="#34A853" d="M20 7h-4V3z"/>
+        <path fill="#E6F4EA" d="M9 10h6v1H9zm0 3h6v1H9zm0 3h3v1H9z"/>
+        <path fill="none" d="M0 0h24v24H0z"/>
+      </svg>
+      <span>Latest submissions sheet</span>
+    </a>
+  </header>
+
+  <main>
+    <!-- 1. Per-site overview -->
+    <section class="panel">
+      <header>
+        <h2>Sites overview</h2>
+        <p>Status of individual sites with respect to expected logsheet counts.</p>
+      </header>
+      <div class="panel-content" id="sites-overview">
+        Loading statistics…
+      </div>
+    </section>
+
+     <!-- 2. Map -->
+     <section class="panel">
+      <header>
+        <h2>Sampling locations map</h2>
+        <p>Map of coordinates from the latest submissions.</p>
+      </header>
+      <div class="panel-content" style="padding: 0; max-height: none; height: 420px;">
+        <div id="map" style="width: 100%; height: 100%;"></div>
+      </div>
+    </section>
+
+    <!-- 3. Duplicated barcodes -->
+    <section class="panel">
+      <header>
+        <h2>Duplicated barcodes</h2>
+        <p>Sheet ID - column name - site ID.</p>
+      </header>
+      <div class="panel-content" id="duplicated-barcodes">
+        Loading duplicated barcode warnings…
+      </div>
+    </section>
+
+    <!-- 4. Missing barcodes -->
+    <section class="panel">
+      <header>
+        <h2>Missing barcodes</h2>
+        <p>Expected barcodes that are empty.</p>
+      </header>
+      <div class="panel-content" id="missing-barcodes">
+        Loading missing barcode warnings…
+      </div>
+    </section>
+  </main>
+
+  <!-- 5 & 6. Logs (hideable) -->
+  <details>
+    <summary>Logs</summary>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+      <section>
+        <h3>Processing log</h3>
+        <div class="logs" id="processing-log">
+          Loading processing log…
+        </div>
+      </section>
+      <section>
+        <h3>Statistics log</h3>
+        <div class="logs" id="statistics-log">
+          Loading statistics log…
+        </div>
+      </section>
+    </div>
+  </details>
+
+  <script>
+    async function fetchText(path) {
+      try {
+        const resp = await fetch(path);
+        if (!resp.ok) {
+          throw new Error(resp.status + " " + resp.statusText);
+        }
+        return await resp.text();
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function renderPlainText(text, container) {
+      if (!text) {
+        container.innerHTML = '<span class="error">Unable to load log.</span>';
+        return;
+      }
+      const pre = document.createElement("pre");
+      pre.textContent = text;
+      container.innerHTML = "";
+      container.appendChild(pre);
+    }
+
+    function renderMarkdownMd(text, container) {
+      if (!text) {
+        container.innerHTML = '<span class="error">Unable to load file.</span>';
+        return;
+      }
+      container.innerHTML = marked.parse(text);
+    }
+
+    (async function init() {
+      // 0. Google Sheets link from external file
+      const linkTxt = await fetchText("link.txt");
+      const linkEl = document.getElementById("sheets-link");
+      if (linkEl) {
+        const url = (linkTxt || "").trim();
+        if (url) {
+          linkEl.href = url;
+        } else {
+          // Hide link if file missing or empty
+          linkEl.style.display = "none";
+        }
+      }
+
+      // 1. Sites overview (from markdown summary)
+      const statsMd = await fetchText("statistics/statistics.md");
+      renderMarkdownMd(statsMd, document.getElementById("sites-overview"));
+
+      // 2. Duplicated barcodes
+      const dupMd = await fetchText("statistics/duplicated_barcodes.md");
+      renderMarkdownMd(dupMd, document.getElementById("duplicated-barcodes"));
+
+      // 3. Missing barcodes
+      const missingMd = await fetchText("statistics/missing_barcodes.md");
+      renderMarkdownMd(missingMd, document.getElementById("missing-barcodes"));
+
+      // 4. Processing log
+      const processingLog = await fetchText("logs/processing.log");
+      renderPlainText(processingLog, document.getElementById("processing-log"));
+
+      // 5. Statistics log
+      const statisticsLog = await fetchText("logs/statistics.log");
+      renderPlainText(statisticsLog, document.getElementById("statistics-log"));
+    })();
+
+    // Initialize OpenStreetMap (Leaflet) map with coordinates from CSV
+    (function initMap() {
+      if (typeof L === "undefined") return;
+
+      const mapElement = document.getElementById("map");
+      if (!mapElement) return;
+
+      const map = L.map(mapElement).setView([50.1265, 14.4179], 6);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+
+      fetch("statistics/coords.csv")
+        .then((resp) => (resp.ok ? resp.text() : null))
+        .then((text) => {
+          if (!text) return;
+          const lines = text.trim().split("\n");
+          if (lines.length <= 1) return;
+
+          const header = lines[0].split(",");
+          const idxLabel = header.indexOf("label");
+          const idxSite = header.indexOf("Site ID");
+          const idxLat = header.indexOf("latitude");
+          const idxLon = header.indexOf("longitude");
+          if (idxLabel === -1 || idxSite === -1 || idxLat === -1 || idxLon === -1) {
+            return;
+          }
+
+          const siteColors = new Map();
+          const palette = [
+            "#ef4444",
+            "#22c55e",
+            "#3b82f6",
+            "#eab308",
+            "#a855f7",
+            "#f97316",
+            "#06b6d4",
+            "#84cc16",
+            "#ec4899",
+            "#6366f1",
+          ];
+          let paletteIndex = 0;
+
+          const latlngs = [];
+
+          lines.slice(1).forEach((line) => {
+            if (!line.trim()) return;
+            const parts = line.split(",");
+            if (parts.length <= Math.max(idxLabel, idxSite, idxLat, idxLon)) return;
+
+            const lat = parseFloat(parts[idxLat]);
+            const lon = parseFloat(parts[idxLon]);
+            if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+
+            const label = parts[idxLabel] || "";
+            const siteId = parts[idxSite] || "";
+
+            if (!siteColors.has(siteId)) {
+              const color = palette[paletteIndex % palette.length];
+              paletteIndex += 1;
+              siteColors.set(siteId, color);
+            }
+            const color = siteColors.get(siteId);
+
+            const latlng = [lat, lon];
+            const marker = L.circleMarker(latlng, {
+              radius: 6,
+              color,
+              fillColor: color,
+              fillOpacity: 0.8,
+              weight: 1,
+            }).addTo(map);
+
+            const popupContent = `<strong>${siteId || "Location"}</strong><br/>${label}`;
+            marker.bindPopup(popupContent);
+
+            latlngs.push(latlng);
+          });
+
+          if (latlngs.length) {
+            map.fitBounds(latlngs, { padding: [20, 20] });
+          }
+        })
+        .catch(() => {});
+    })();
+  </script>
+</body>
+</html>
