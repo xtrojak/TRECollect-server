@@ -16,10 +16,34 @@
       padding: 1rem 1.5rem;
       background: #1f2933;
       color: #f9fafb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
     }
     header h1 {
       margin: 0;
       font-size: 1.4rem;
+    }
+    .header-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: #bfdbfe;
+      text-decoration: none;
+      font-size: 0.9rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(191, 219, 254, 0.4);
+      background: rgba(15, 23, 42, 0.5);
+    }
+    .header-link:hover {
+      background: rgba(15, 23, 42, 0.8);
+      border-color: rgba(191, 219, 254, 0.8);
+    }
+    .header-link svg {
+      width: 16px;
+      height: 16px;
     }
     main {
       display: grid;
@@ -133,6 +157,21 @@
 <body>
   <header>
     <h1>TRECollect – Sites Overview</h1>
+    <a
+      id="sheets-link"
+      class="header-link"
+      href="#"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="#0F9D58" d="M6 2h9l5 5v15H6z"/>
+        <path fill="#34A853" d="M20 7h-4V3z"/>
+        <path fill="#E6F4EA" d="M9 10h6v1H9zm0 3h6v1H9zm0 3h3v1H9z"/>
+        <path fill="none" d="M0 0h24v24H0z"/>
+      </svg>
+      <span>Latest submissions sheet</span>
+    </a>
   </header>
 
   <main>
@@ -171,7 +210,7 @@
   </main>
 
   <!-- 4 & 5. Logs (hideable) -->
-  <details open>
+  <details>
     <summary>Logs</summary>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
       <section>
@@ -222,6 +261,19 @@
     }
 
     (async function init() {
+      // 0. Google Sheets link from external file
+      const linkTxt = await fetchText("link.txt");
+      const linkEl = document.getElementById("sheets-link");
+      if (linkEl) {
+        const url = (linkTxt || "").trim();
+        if (url) {
+          linkEl.href = url;
+        } else {
+          // Hide link if file missing or empty
+          linkEl.style.display = "none";
+        }
+      }
+
       // 1. Sites overview (from markdown summary)
       const statsMd = await fetchText("statistics/statistics.md");
       renderMarkdownMd(statsMd, document.getElementById("sites-overview"));
