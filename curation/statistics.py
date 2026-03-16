@@ -175,7 +175,7 @@ def _compute_duplicated_barcodes(
                     if not site_ids:
                         continue
                     sites_str = ", ".join(f"`{sid}`" for sid in site_ids)
-                    f.write(f"* `{sheet_name}` - `{col}` - {sites_str}\n")
+                    f.write(f"* `{sheet_name}` | `{col}` | {sites_str}\n")
             f.write("\n\n")
     print(">>> Duplicated barcode errors written to statistics/duplicated_barcodes.md")
 
