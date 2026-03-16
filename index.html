@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TRECollect – Statistics Overview</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f7;
+      color: #222;
+    }
+    header {
+      padding: 1rem 1.5rem;
+      background: #1f2933;
+      color: #f9fafb;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.4rem;
+    }
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+      padding: 1rem 1.5rem 2rem;
+    }
+    .panel {
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel header {
+      background: none;
+      color: inherit;
+      padding: 0.75rem 1rem 0.5rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .panel header h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+    .panel header p {
+      margin: 0.15rem 0 0;
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    .panel-content {
+      padding: 0.75rem 1rem 1rem;
+      overflow: auto;
+      max-height: 320px;
+      font-size: 0.85rem;
+      background: #f9fafb;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    th, td {
+      padding: 0.25rem 0.4rem;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #f3f4f6;
+      z-index: 1;
+    }
+    .status-ok {
+      color: #15803d;
+      font-weight: 600;
+    }
+    .status-missing {
+      color: #b91c1c;
+      font-weight: 600;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    details {
+      margin: 0 1.5rem 1.5rem;
+    }
+    details summary {
+      cursor: pointer;
+      font-weight: 600;
+      padding: 0.5rem 0;
+    }
+    .logs {
+      background: #111827;
+      color: #e5e7eb;
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      max-height: 260px;
+      overflow: auto;
+      font-size: 0.8rem;
+    }
+    .logs pre {
+      color: inherit;
+    }
+    /* Tighten vertical spacing in rendered markdown */
+    .panel-content h2,
+    .panel-content h3,
+    .panel-content h4 {
+      margin: 0.3rem 0 0.15rem;
+    }
+    .panel-content p {
+      margin: 0.15rem 0;
+    }
+    .panel-content ul {
+      margin: 0.15rem 0 0.15rem 1.1rem;
+      padding: 0;
+    }
+    .panel-content li {
+      margin: 0.05rem 0;
+    }
+    .error {
+      color: #b91c1c;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TRECollect – Statistics & QA Overview</h1>
+  </header>
+
+  <main>
+    <!-- 1. Per-site overview -->
+    <section class="panel">
+      <header>
+        <h2>Sites overview</h2>
+        <p>Per site sheet completion – zeros indicate missing sheets.</p>
+      </header>
+      <div class="panel-content" id="sites-overview">
+        Loading statistics…
+      </div>
+    </section>
+
+    <!-- 2. Duplicated barcodes -->
+    <section class="panel">
+      <header>
+        <h2>Duplicated barcodes</h2>
+        <p>Barcode values used in more than one place.</p>
+      </header>
+      <div class="panel-content" id="duplicated-barcodes">
+        Loading duplicated barcode warnings…
+      </div>
+    </section>
+
+    <!-- 3. Missing barcodes -->
+    <section class="panel">
+      <header>
+        <h2>Missing barcodes</h2>
+        <p>Expected barcode fields that are empty.</p>
+      </header>
+      <div class="panel-content" id="missing-barcodes">
+        Loading missing barcode warnings…
+      </div>
+    </section>
+  </main>
+
+  <!-- 4 & 5. Logs (hideable) -->
+  <details open>
+    <summary>Logs</summary>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+      <section>
+        <h3>Processing log</h3>
+        <div class="logs" id="processing-log">
+          Loading processing log…
+        </div>
+      </section>
+      <section>
+        <h3>Statistics log</h3>
+        <div class="logs" id="statistics-log">
+          Loading statistics log…
+        </div>
+      </section>
+    </div>
+  </details>
+
+  <script>
+    async function fetchText(path) {
+      try {
+        const resp = await fetch(path);
+        if (!resp.ok) {
+          throw new Error(resp.status + " " + resp.statusText);
+        }
+        return await resp.text();
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function renderSitesOverview(csv, container) {
+      if (!csv) {
+        container.innerHTML = '<span class="error">Unable to load statistics/statistics.csv</span>';
+        return;
+      }
+      const lines = csv.trim().split(/\\r?\\n/);
+      if (!lines.length) {
+        container.textContent = "No data.";
+        return;
+      }
+      const headers = lines[0].split(",");
+      const rows = lines.slice(1).map(line => line.split(","));
+
+      const sheetHeaders = headers.slice(1); // all except Site ID
+      const list = document.createElement("ul");
+      list.style.listStyle = "none";
+      list.style.padding = "0";
+      list.style.margin = "0";
+
+      rows.forEach(cols => {
+        if (!cols.length || !cols[0]) return;
+        const siteId = cols[0];
+        const nonIdValues = cols.slice(1);
+        const missingSheets = [];
+        nonIdValues.forEach((val, idx) => {
+          if (val === "0" || val === "" || val == null) {
+            missingSheets.push(sheetHeaders[idx]);
+          }
+        });
+
+        const li = document.createElement("li");
+        li.style.margin = "0.15rem 0";
+
+        const title = document.createElement("span");
+        title.textContent = siteId + ": ";
+        li.appendChild(title);
+
+        const status = document.createElement("span");
+        if (missingSheets.length === 0) {
+          status.textContent = "OK";
+          status.className = "status-ok";
+        } else {
+          status.textContent = "Missing sheets – " + missingSheets.join(", ");
+          status.className = "status-missing";
+        }
+        li.appendChild(status);
+
+        list.appendChild(li);
+      });
+
+      container.innerHTML = "";
+      container.appendChild(list);
+    }
+
+    function renderMarkdownLike(text, container) {
+      if (!text) {
+        container.innerHTML = '<span class="error">Unable to load file.</span>';
+        return;
+      }
+      // Very lightweight rendering: honor headings and bullet lists, otherwise preformatted text.
+      const lines = text.split(/\\r?\\n/);
+      const frag = document.createDocumentFragment();
+      lines.forEach(line => {
+        if (line.startsWith("# ")) {
+          const h1 = document.createElement("h2");
+          h1.textContent = line.replace(/^# /, "");
+          frag.appendChild(h1);
+        } else if (line.startsWith("## ")) {
+          const h2 = document.createElement("h3");
+          h2.textContent = line.replace(/^## /, "");
+          frag.appendChild(h2);
+        } else if (line.startsWith("### ")) {
+          const h3 = document.createElement("h4");
+          h3.textContent = line.replace(/^### /, "");
+          frag.appendChild(h3);
+        } else if (line.trim().startsWith("- ")) {
+          let ul = frag.lastElementChild;
+          if (!ul || ul.tagName !== "UL") {
+            ul = document.createElement("ul");
+            frag.appendChild(ul);
+          }
+          const li = document.createElement("li");
+          li.textContent = line.trim().replace(/^-\\s*/, "");
+          ul.appendChild(li);
+        } else if (line.trim() === "") {
+          frag.appendChild(document.createElement("br"));
+        } else {
+          const p = document.createElement("p");
+          p.textContent = line;
+          frag.appendChild(p);
+        }
+      });
+      container.innerHTML = "";
+      container.appendChild(frag);
+    }
+
+    function renderPlainText(text, container) {
+      if (!text) {
+        container.innerHTML = '<span class="error">Unable to load log.</span>';
+        return;
+      }
+      const pre = document.createElement("pre");
+      pre.textContent = text;
+      container.innerHTML = "";
+      container.appendChild(pre);
+    }
+
+    // Enhanced Markdown-ish renderer that also formats inline `code` spans.
+    function renderMarkdownMd(text, container) {
+      if (!text) {
+        container.innerHTML = '<span class="error">Unable to load file.</span>';
+        return;
+      }
+      const lines = text.split(/\r?\n/);
+      const frag = document.createDocumentFragment();
+      lines.forEach(line => {
+        const trimmed = line.replace(/^\s+/, "");
+        if (trimmed.startsWith("# ")) {
+          const h1 = document.createElement("h2");
+          h1.textContent = trimmed.replace(/^# /, "");
+          frag.appendChild(h1);
+        } else if (trimmed.startsWith("## ")) {
+          const h2 = document.createElement("h3");
+          h2.textContent = trimmed.replace(/^## /, "");
+          frag.appendChild(h2);
+        } else if (trimmed.startsWith("### ")) {
+          const h3 = document.createElement("h4");
+          h3.textContent = trimmed.replace(/^### /, "");
+          frag.appendChild(h3);
+        } else if (trimmed.startsWith("- ")) {
+          let ul = frag.lastElementChild;
+          if (!ul || ul.tagName !== "UL") {
+            ul = document.createElement("ul");
+            frag.appendChild(ul);
+          }
+          const li = document.createElement("li");
+          const content = trimmed.replace(/^-\\s*/, "");
+          li.innerHTML = content
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/`([^`]+)`/g, "<code>$1</code>");
+          ul.appendChild(li);
+        } else if (trimmed === "") {
+          // skip extra vertical space for blank lines; spacing handled via CSS margins
+        } else {
+          const p = document.createElement("p");
+          const safe = trimmed
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/`([^`]+)`/g, "<code>$1</code>");
+          p.innerHTML = safe;
+          frag.appendChild(p);
+        }
+      });
+      container.innerHTML = "";
+      container.appendChild(frag);
+    }
+
+    (async function init() {
+      // 1. Sites overview
+      const statsCsv = await fetchText("statistics/statistics.csv");
+      renderSitesOverview(statsCsv, document.getElementById("sites-overview"));
+
+      // 2. Duplicated barcodes
+      const dupMd = await fetchText("statistics/duplicated_barcodes.md");
+      renderMarkdownMd(dupMd, document.getElementById("duplicated-barcodes"));
+
+      // 3. Missing barcodes
+      const missingMd = await fetchText("statistics/missing_barcodes.md");
+      renderMarkdownMd(missingMd, document.getElementById("missing-barcodes"));
+
+      // 4. Processing log
+      const processingLog = await fetchText("logs/processing.log");
+      renderPlainText(processingLog, document.getElementById("processing-log"));
+
+      // 5. Statistics log
+      const statisticsLog = await fetchText("logs/statistics.log");
+      renderPlainText(statisticsLog, document.getElementById("statistics-log"));
+    })();
+  </script>
+</body>
+</html>
+
