@@ -210,3 +210,52 @@ class GoogleAPI:
         # This uses A1 notation "2:<last_row>" to wipe rows 2..N.
         sheet.batch_clear([f"2:{last_row}"])
         sheet.freeze(rows=1)
+
+    @rate_limited_with_retry()
+    def backup_spreadsheet(self, source_file_key: str, target_file_key: str) -> None:
+        """
+        Replace the contents of the target spreadsheet with an exact copy
+        of all worksheets from the source spreadsheet.
+
+        Whatever existed in the target spreadsheet before is discarded.
+
+        This uses Google Sheets' native sheet copy operation so values and formatting
+        are preserved.
+        """
+        source = self.client.open_by_key(source_file_key)
+        target = self.client.open_by_key(target_file_key)
+
+        source_sheets = source.worksheets()
+        if not source_sheets:
+            # If there's nothing to copy, just clear the target completely (leave a single empty sheet).
+            existing = target.worksheets()
+            if len(existing) == 0:
+                target.add_worksheet(title="Sheet1", rows=100, cols=26)
+                return
+            # Keep one sheet, delete the rest, and clear its contents.
+            keep = existing[0]
+            for ws in existing[1:]:
+                target.del_worksheet(ws)
+            keep.clear()
+            return
+
+        # Ensure we can delete all existing sheets by creating a temporary one.
+        tmp_title = "__tmp_backup__"
+        tmp = target.add_worksheet(title=tmp_title, rows=10, cols=10)
+
+        # Delete everything that existed in target.
+        for ws in [w for w in target.worksheets() if w.id != tmp.id]:
+            target.del_worksheet(ws)
+
+        copied_worksheets = []
+        for ws in source_sheets:
+            new_sheet_id = ws.copy_to(target_file_key)
+            new_ws = target.get_worksheet_by_id(new_sheet_id)
+            new_ws.update_title(ws.title)
+            copied_worksheets.append(new_ws)
+
+        # Reorder to match source order.
+        target.reorder_worksheets(copied_worksheets + [tmp])
+
+        # Remove temporary sheet.
+        target.del_worksheet(tmp)
