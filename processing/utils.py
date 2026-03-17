@@ -41,6 +41,14 @@ def get_last_statistics_timestamp():
     return datetime.datetime.fromisoformat(read_file('timestamps/last_statistics.txt'))
 
 
+def save_last_backup_timestamp(now):
+    save_file('timestamps/last_backup.txt', now.replace(microsecond=0).isoformat())
+
+
+def get_last_backup_timestamp():
+    return datetime.datetime.fromisoformat(read_file('timestamps/last_backup.txt'))
+
+
 def load_config_versions(local_root: str) -> dict[str, dict[str, dict]]:
     """Load downloaded config JSONs into a nested dict.
 
