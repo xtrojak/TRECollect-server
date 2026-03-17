@@ -1,0 +1,99 @@
+name: Check processing status and notify Slack
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'  # Every 3 hours
+  workflow_dispatch:
+
+jobs:
+  check-timestamp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Check timestamp and notify if needed
+        env:
+          TIMESTAMP_URL: https://swifter.embl.de/~trojak/TRECollect/logs/processing.log
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python <<EOF
+          import requests
+          from datetime import datetime, timedelta
+          import sys
+          import time
+
+          url = "${{ env.TIMESTAMP_URL }}"
+
+          ts = None
+          last_error = None
+
+          # Retry a few times in case the file is temporarily empty
+          for attempt in range(3):
+              try:
+                  response = requests.get(url)
+                  response.raise_for_status()
+              except Exception as e:
+                  last_error = e
+                  print(f"Attempt {attempt+1}: failed to fetch log: {e}")
+                  time.sleep(120)
+                  continue
+
+              lines = [ln.strip() for ln in response.text.splitlines() if ln.strip()]
+              if not lines:
+                  print(f"Attempt {attempt+1}: log is empty, waiting before retry...")
+                  time.sleep(120)
+                  continue
+
+              first_line = lines[0]
+              if first_line.startswith(">>>"):
+                  ts_str = first_line.lstrip(">").strip()
+              else:
+                  ts_str = first_line
+
+              try:
+                  ts = datetime.fromisoformat(ts_str)
+                  break
+              except Exception as e:
+                  last_error = e
+                  print(f"Attempt {attempt+1}: failed to parse timestamp from line {first_line!r}: {e}")
+                  time.sleep(120)
+
+          if ts is None:
+              print("Giving up: could not obtain a valid timestamp.")
+              if last_error:
+                  print(f"Last error: {last_error}")
+              sys.exit(1)
+
+          now = datetime.now(ts.tzinfo)
+          diff = now - ts
+
+          print(f"Timestamp: {ts}")
+          print(f"Current time: {now}")
+          print(f"Time difference: {diff}")
+
+          if diff > timedelta(hours=3):
+              import json
+              import urllib.request
+
+              slack_data = {
+                  "text": f"*Automatic Alert*: Digital logsheets processing - last run is older than 3 hours."
+              }
+
+              req = urllib.request.Request(
+                  url="${{ env.SLACK_WEBHOOK_URL }}",
+                  data=json.dumps(slack_data).encode("utf-8"),
+                  headers={"Content-Type": "application/json"}
+              )
+
+              with urllib.request.urlopen(req) as resp:
+                  print("Slack notification sent.")
+          else:
+              print("Timestamp is recent. No alert needed.")
+          EOF
