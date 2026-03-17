@@ -21,6 +21,7 @@ RUN python -m venv TRECollect-server && \
 # Add cron jobs: processing every minute, statistics every 5 minutes
 RUN echo "* * * * * cd /app && flock -n /tmp/processing_script.lock /bin/bash /app/processing_script.sh" > /etc/cron.d/mycron && \
     echo "*/5 * * * * cd /app && flock -n /tmp/statistics_script.lock /bin/bash /app/statistics_script.sh" >> /etc/cron.d/mycron && \
+    echo "0 6 * * * cd /app && flock -n /tmp/backup_script.lock /bin/bash /app/backup_script.sh" >> /etc/cron.d/mycron && \
     chmod 0644 /etc/cron.d/mycron && \
     crontab /etc/cron.d/mycron
 
