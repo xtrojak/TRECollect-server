@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="refresh" content="300" />
-  <title>TRECollect – Statistics Overview</title>
+  <title>TRECollect – Sites overview</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link
     rel="stylesheet"
@@ -36,6 +36,24 @@
     header h1 {
       margin: 0;
       font-size: 1.4rem;
+    }
+    .header-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 0;
+    }
+    .status-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      background: #ef4444; /* default: red until proven fresh */
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+      flex: 0 0 auto;
+    }
+    .status-dot.ok {
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
     }
     .header-link {
       display: inline-flex;
@@ -173,7 +191,10 @@
 </head>
 <body>
   <header>
-    <h1>TRECollect – Sites Overview</h1>
+    <div class="header-title">
+      <span id="processing-status-dot" class="status-dot" aria-label="Processing status"></span>
+      <h1>TRECollect – Sites Overview</h1>
+    </div>
     <a
       id="sheets-link"
       class="header-link"
@@ -218,7 +239,7 @@
     <section class="panel">
       <header>
         <h2>Duplicated barcodes</h2>
-        <p>Sheet ID - column name - site ID.</p>
+        <p>Sheet ID | column name | site ID.</p>
       </header>
       <div class="panel-content" id="duplicated-barcodes">
         Loading duplicated barcode warnings…
@@ -330,6 +351,34 @@
 
       // 4. Processing log
       const processingLog = await fetchText("logs/processing.log");
+      (function updateProcessingDot(text) {
+        const dot = document.getElementById("processing-status-dot");
+        if (!dot) return;
+
+        // default red (missing/empty/unparseable)
+        dot.classList.remove("ok");
+
+        if (text === null || text === undefined) return;
+        if (typeof text === "string" && text.trim() === "") return;
+
+        const firstNonEmpty = String(text)
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .find((l) => l.length > 0);
+        if (!firstNonEmpty) return;
+
+        const tsStr = firstNonEmpty.startsWith(">>>")
+          ? firstNonEmpty.replace(/^>+/, "").trim()
+          : firstNonEmpty;
+
+        const ts = new Date(tsStr);
+        if (Number.isNaN(ts.getTime())) return;
+
+        const diffMs = Date.now() - ts.getTime();
+        if (diffMs <= 5 * 60 * 1000) {
+          dot.classList.add("ok");
+        }
+      })(processingLog);
       renderPlainText(processingLog, document.getElementById("processing-log"));
 
       // 5. Statistics log

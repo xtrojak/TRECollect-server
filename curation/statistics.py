@@ -127,11 +127,11 @@ def _compute_missing_barcodes(
         patterns = barcode_by_sheet.get(sheet_name, set())
         if not patterns:
             continue
-        # Match barcode columns by substring to support dynamic instances that prefix labels.
+        # Match barcode columns by suffix to support dynamic instances that prefix labels.
         barcode_cols = [
             col
             for col in df.columns
-            if any(pat and pat in str(col) for pat in patterns)
+            if any(pat and str(col).endswith(pat) for pat in patterns)
         ]
         if not barcode_cols:
             continue
@@ -172,7 +172,7 @@ def _compute_duplicated_barcodes(
         patterns = barcode_by_sheet.get(sheet_name, set())
         if not patterns:
             continue
-        barcode_cols = [col for col in df.columns if any(pat and pat in str(col) for pat in patterns)]
+        barcode_cols = [col for col in df.columns if any(pat and str(col).endswith(pat) for pat in patterns)]
         if not barcode_cols:
             continue
         site_col = df["Site ID"].astype(str).str.strip()
