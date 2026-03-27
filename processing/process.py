@@ -23,7 +23,8 @@ SIMPLE_TYPES = frozenset({
     "multiselect_image",
     "barcode",
     "photo",
-    "checkbox"
+    "checkbox",
+    "timepicker"
 })
 
 # Types that require custom extraction (structure preserved for later implementation).
