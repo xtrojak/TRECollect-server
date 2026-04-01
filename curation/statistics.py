@@ -59,6 +59,26 @@ def _is_empty(val) -> bool:
     return str(val).strip() == ""
 
 
+_SITE_COLOR_PALETTE = [
+    "#ef4444",
+    "#22c55e",
+    "#3b82f6",
+    "#eab308",
+    "#a855f7",
+    "#f97316",
+    "#06b6d4",
+    "#84cc16",
+    "#ec4899",
+    "#6366f1",
+]
+
+
+def _site_color(site_id: str) -> str:
+    # Keep in sync with TRECollect-status.html map color assignment.
+    h = sum(ord(ch) for ch in str(site_id))
+    return _SITE_COLOR_PALETTE[h % len(_SITE_COLOR_PALETTE)]
+
+
 def _compute_site_overview(data: Dict[str, pd.DataFrame]) -> None:
     # Per site_id: which sheets and how many rows (sheet_name -> row count).
     per_site: Dict[str, Dict[str, int]] = {}
@@ -91,6 +111,7 @@ def _compute_site_overview(data: Dict[str, pd.DataFrame]) -> None:
     sheet_names = sorted(expected_counts.keys())
 
     for site_id in sorted(per_site.keys()):
+        dot = f'<span style="color: {_site_color(site_id)};">●</span>'
         issues: list[str] = []
         for sheet in sheet_names:
             expected = expected_counts.get(sheet, 0)
@@ -104,10 +125,10 @@ def _compute_site_overview(data: Dict[str, pd.DataFrame]) -> None:
                 issues.append(f"- `{sheet}`: extra {diff} (expected {expected}, found {actual})")
 
         if not issues:
-            lines.append(f"## {site_id} ✓\n")
+            lines.append(f"## {dot} {site_id} ✓\n")
             lines.append("All sheets present with expected counts.\n")
         else:
-            lines.append(f"## {site_id} ✗\n")
+            lines.append(f"## {dot} {site_id} ✗\n")
             lines.extend(issues)
             lines.append("")
 

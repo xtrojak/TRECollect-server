@@ -459,7 +459,6 @@
             return;
           }
 
-          const siteColors = new Map();
           const palette = [
             "#ef4444",
             "#22c55e",
@@ -472,7 +471,15 @@
             "#ec4899",
             "#6366f1",
           ];
-          let paletteIndex = 0;
+
+          function colorForSite(siteId) {
+            const key = String(siteId || "");
+            let hash = 0;
+            for (let i = 0; i < key.length; i += 1) {
+              hash += key.charCodeAt(i);
+            }
+            return palette[hash % palette.length];
+          }
 
           const latlngs = [];
 
@@ -488,12 +495,7 @@
             const label = parts[idxLabel] || "";
             const siteId = parts[idxSite] || "";
 
-            if (!siteColors.has(siteId)) {
-              const color = palette[paletteIndex % palette.length];
-              paletteIndex += 1;
-              siteColors.set(siteId, color);
-            }
-            const color = siteColors.get(siteId);
+            const color = colorForSite(siteId);
 
             const latlng = [lat, lon];
             const marker = L.marker(latlng, { icon: pinIcon(color) }).addTo(map);
