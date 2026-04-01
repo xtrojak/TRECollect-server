@@ -4,22 +4,34 @@ from gspread.exceptions import WorksheetNotFound
 from oauth2client.service_account import ServiceAccountCredentials
 from typing import Optional, List
 from googleapiclient.discovery import build
+from google.oauth2.service_account import Credentials as GoogleServiceAccountCredentials
+from google.auth.transport.requests import Request as GoogleAuthRequest
 import datetime
+import requests
 
 from APIs.utils import rate_limited_with_retry, clean_up_nulls, create_keyfile_dict
 
 
 class GoogleAPI:
     def __init__(self):
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(create_keyfile_dict(), scope)
-        self.client = gspread.authorize(creds)
+        keyfile_dict = create_keyfile_dict()
+
+        sheets_scopes = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        self._sheets_creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, sheets_scopes)
+        self.client = gspread.authorize(self._sheets_creds)
+
+        drive_scopes = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
+        self._drive_meta_creds = ServiceAccountCredentials.from_json_keyfile_dict(keyfile_dict, drive_scopes)
+
+        weather_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+        self._weather_oauth_creds = GoogleServiceAccountCredentials.from_service_account_info(
+            keyfile_dict,
+            scopes=weather_scopes,
+        )
 
     @rate_limited_with_retry()
     def get_modified_time(self, file_key):
-        scopes = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(create_keyfile_dict(), scopes)
-        drive = build("drive", "v3", credentials=creds)
+        drive = build("drive", "v3", credentials=self._drive_meta_creds)
 
         meta = drive.files().get(fileId=file_key, fields="modifiedTime").execute()
         return meta['modifiedTime']
@@ -272,3 +284,21 @@ class GoogleAPI:
         modified_time = self.get_modified_time(file_key)
         modified_time = datetime.datetime.fromisoformat(modified_time)
         return modified_time > last_timestamp
+
+    @rate_limited_with_retry()
+    def weather_history_hours_lookup(self, latitude: float, longitude: float) -> dict:
+        url = "https://weather.googleapis.com/v1/history/hours:lookup"
+        params = {
+            "location.latitude": latitude,
+            "location.longitude": longitude,
+            "hours": 24,
+        }
+
+        headers = {}
+        if not self._weather_oauth_creds.valid:
+            self._weather_oauth_creds.refresh(GoogleAuthRequest())
+        headers["Authorization"] = f"Bearer {self._weather_oauth_creds.token}"
+
+        resp = requests.get(url, params=params, headers=headers, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
