@@ -451,7 +451,7 @@ def _fill_weather_columns(
             end_ts = _parse_iso_utc(interval.get("endTime"))
             if start_ts is None or end_ts is None:
                 continue
-            if start_ts >= sample_start and end_ts <= sample_end:
+            if start_ts <= sample_end and end_ts >= sample_start:
                 selected_all.append(hour)
 
         if not selected_all:
