@@ -114,9 +114,9 @@ def write_curated_rows(
     print(f">>> Writing sheets")
 
     for sheet_name, df in rows_to_write.items():
-        print(f">>>'{sheet_name}' with {len(df)} rows.")
         if df.empty:
             continue
+        print(f">>>'{sheet_name}' with {len(df)} rows.")
         if sheet_name in overwrite_sheets:
             google_api.overwrite_table(target_sheet_id, sheet_name, df)
         else:
@@ -150,7 +150,7 @@ def run_curation(
         raw_rows[sheet_name] = pd.DataFrame(rows)
 
     curated = curate_rows_per_sheet(raw_rows, owncloud_images_token, sheet_prefix)
-    rules = get_output_rules()
+    rules = get_output_rules(sheet_prefix)
     sheets_for_rules = sheets_to_load_for_rules(rules)
     existing_sheets = google_api.read_tables(target_sheet_id, sheets_for_rules)
 
