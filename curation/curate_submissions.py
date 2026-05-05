@@ -69,6 +69,7 @@ def fetch_new_rows(google_api: GoogleAPI, source_sheet_id: str, last_timestamp: 
 def curate_rows_per_sheet(
     raw_rows: Dict[str, pd.DataFrame],
     owncloud_images_token: str,
+    sheet_prefix: str,
 ) -> Dict[str, pd.DataFrame]:
     """
     Apply curation rules to all newly collected rows per worksheet.
@@ -80,11 +81,11 @@ def curate_rows_per_sheet(
     print(">>> Curating sheets")
 
     for sheet_name, df in raw_rows.items():
-        print(f">>>'{sheet_name}' with {len(df)} rows.")
-        # For now we only curate LSI sheets; others are ignored.
-        if not sheet_name.startswith("LSI"):
+        if not sheet_name.startswith(sheet_prefix):
             continue
 
+        print(f">>>'{sheet_name}' with {len(df)} rows.")
+        
         if df.empty:
             continue
 
@@ -113,9 +114,9 @@ def write_curated_rows(
     print(f">>> Writing sheets")
 
     for sheet_name, df in rows_to_write.items():
-        print(f">>>'{sheet_name}' with {len(df)} rows.")
         if df.empty:
             continue
+        print(f">>>'{sheet_name}' with {len(df)} rows.")
         if sheet_name in overwrite_sheets:
             google_api.overwrite_table(target_sheet_id, sheet_name, df)
         else:
@@ -129,6 +130,7 @@ def run_curation(
     google_api: GoogleAPI,
     target_sheet_id: str,
     owncloud_images_token: str,
+    sheet_prefix: str
 ) -> Optional[Dict[str, pd.DataFrame]]:
     """
     Curate production data (in-memory) and write to the target spreadsheet.
@@ -147,8 +149,8 @@ def run_curation(
             continue
         raw_rows[sheet_name] = pd.DataFrame(rows)
 
-    curated = curate_rows_per_sheet(raw_rows, owncloud_images_token)
-    rules = get_output_rules()
+    curated = curate_rows_per_sheet(raw_rows, owncloud_images_token, sheet_prefix)
+    rules = get_output_rules(sheet_prefix)
     sheets_for_rules = sheets_to_load_for_rules(rules)
     existing_sheets = google_api.read_tables(target_sheet_id, sheets_for_rules)
 

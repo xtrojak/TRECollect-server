@@ -16,11 +16,11 @@ from curation.curate_submissions import run_curation, curate_rows_per_sheet
 from curation.output_rules import apply_output_rules, get_output_rules
 
 
-def _curated_output_filename(local_filename: str) -> str:
+def _curated_output_filename(local_filename: str, sheet_prefix: str) -> str:
     base, ext = os.path.splitext(local_filename)
     if not ext:
         ext = ".xlsx"
-    return f"{base}_curated{ext}"
+    return f"{base}_{sheet_prefix}_curated{ext}"
 
 
 def main(args):
@@ -115,43 +115,47 @@ def main(args):
                         google_api.add_rows(backup_id, logsheet_names[form_id], row_dicts)
 
         # Curate production data:
-        # - normal mode: write to Google LSI target sheet
+        # - normal mode: write to Google target sheets
         # - local mode: write to local Excel file with "_curated" suffix
         if data:
-            owncloud_images_token = os.environ.get('OWNCLOUD_IMAGES_TOKEN')
-            if args.local:
-                if not owncloud_images_token:
-                    print('>>> Missing OWNCLOUD_IMAGES_TOKEN, skipping local curation output.')
+            for sheet_prefix, target_sheet_id in [
+                ("LSI", "LSI_SHEET_LATEST_SUBMISSIONS_ID"),
+                ("Comadre", "COMADRE_SHEET_LATEST_SUBMISSIONS_ID"),
+            ]:
+                owncloud_images_token = os.environ.get('OWNCLOUD_IMAGES_TOKEN')
+                if args.local:
+                    if not owncloud_images_token:
+                        print('>>> Missing OWNCLOUD_IMAGES_TOKEN, skipping local curation output.')
+                    else:
+                        print(f'>>> Running curation on {sheet_prefix} data (local mode)...')
+                        raw_rows = {}
+                        for form_id, rows in data.items():
+                            sheet_name = logsheet_names.get(form_id)
+                            if not sheet_name or not rows:
+                                continue
+                            raw_rows[sheet_name] = pd.DataFrame(rows)
+
+                        curated = curate_rows_per_sheet(raw_rows, owncloud_images_token, sheet_prefix)
+                        rows_to_write, _ = apply_output_rules(curated, {}, get_output_rules())
+
+                        curated_file = _curated_output_filename(args.local, sheet_prefix)
+                        print(f'>>> Writing curated output locally to {curated_file}...')
+                        for sheet_name, df in rows_to_write.items():
+                            if df.empty:
+                                continue
+                            if os.path.exists(curated_file):
+                                mode = "a"
+                                if_sheet_exists = "replace"
+                            else:
+                                mode = "w"
+                                if_sheet_exists = None
+                            with pd.ExcelWriter(curated_file, engine="openpyxl", mode=mode, if_sheet_exists=if_sheet_exists) as writer:
+                                df.to_excel(writer, sheet_name=sheet_name, index=False)
                 else:
-                    print('>>> Running curation on production data (local mode)...')
-                    raw_rows = {}
-                    for form_id, rows in data.items():
-                        sheet_name = logsheet_names.get(form_id)
-                        if not sheet_name or not rows:
-                            continue
-                        raw_rows[sheet_name] = pd.DataFrame(rows)
-
-                    curated = curate_rows_per_sheet(raw_rows, owncloud_images_token)
-                    rows_to_write, _ = apply_output_rules(curated, {}, get_output_rules())
-
-                    curated_file = _curated_output_filename(args.local)
-                    print(f'>>> Writing curated output locally to {curated_file}...')
-                    for sheet_name, df in rows_to_write.items():
-                        if df.empty:
-                            continue
-                        if os.path.exists(curated_file):
-                            mode = "a"
-                            if_sheet_exists = "replace"
-                        else:
-                            mode = "w"
-                            if_sheet_exists = None
-                        with pd.ExcelWriter(curated_file, engine="openpyxl", mode=mode, if_sheet_exists=if_sheet_exists) as writer:
-                            df.to_excel(writer, sheet_name=sheet_name, index=False)
-            else:
-                lsi_target_sheet_id = os.environ.get('LSI_SHEET_LATEST_SUBMISSIONS_ID')
-                if lsi_target_sheet_id and owncloud_images_token:
-                    print('>>> Running curation on production data...')
-                    run_curation(data, logsheet_names, google_api, lsi_target_sheet_id, owncloud_images_token)
+                    lsi_target_sheet_id = os.environ.get(target_sheet_id)
+                    if lsi_target_sheet_id and owncloud_images_token:
+                        print(f'>>> Running curation on {sheet_prefix} data...')
+                        run_curation(data, logsheet_names, google_api, lsi_target_sheet_id, owncloud_images_token, sheet_prefix)
         else:
             print('>>> No production data to curate.')
 

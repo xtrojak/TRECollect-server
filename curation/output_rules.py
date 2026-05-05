@@ -22,31 +22,33 @@ MERGE_UPSERT = "merge_upsert"
 GATHER_WEATHER = "gather_weather"
 
 # Default rules: add more dicts here or load from file later.
-OUTPUT_RULES: List[Dict[str, Any]] = [
-    {
-        "type": MERGE_UPSERT,
-        "sources": ["LSI 14-1", "LSI 14-2", "LSI 14-3"],
-        "target": "LSI 14",
-        "key_column": "Site ID",
-        # For LSI 14 we also maintain a \"Total score\" column that is
-        # recomputed as the sum of all other columns whose header contains
-        # the word \"total\".
-        "total_score_column": "Total score",
-        "total_from_contains": "total",
-    },
-    {
-        "type": GATHER_WEATHER,
-        "sources": {"LSI 3": ["Soil square GPS coordinates - latitude", "Soil square GPS coordinates - longitude"],
-                    "LSI 5": ["Sediment triangle GPS coordinates - latitude", "Sediment triangle GPS coordinates - longitude"],
-                    "LSI 8": ["Water collection GPS coordinates - latitude", "Water collection GPS coordinates - longitude"]},
-        "target": "LSI 1"
-    },
-]
+OUTPUT_RULES: List[Dict[str, Any]] = {
+    "LSI": [
+        {
+            "type": MERGE_UPSERT,
+            "sources": ["LSI 14-1", "LSI 14-2", "LSI 14-3"],
+            "target": "LSI 14",
+            "key_column": "Site ID",
+            # For LSI 14 we also maintain a \"Total score\" column that is
+            # recomputed as the sum of all other columns whose header contains
+            # the word \"total\".
+            "total_score_column": "Total score",
+            "total_from_contains": "total",
+        },
+        {
+            "type": GATHER_WEATHER,
+            "sources": {"LSI 3": ["Soil square GPS coordinates - latitude", "Soil square GPS coordinates - longitude"],
+                        "LSI 5": ["Sediment triangle GPS coordinates - latitude", "Sediment triangle GPS coordinates - longitude"],
+                        "LSI 8": ["Water collection GPS coordinates - latitude", "Water collection GPS coordinates - longitude"]},
+            "target": "LSI 1"
+        }
+    ]
+}
 
 
-def get_output_rules() -> List[Dict[str, Any]]:
+def get_output_rules(sheet_prefix: str) -> List[Dict[str, Any]]:
     """Return the list of output rules (configurable)."""
-    return list(OUTPUT_RULES)
+    return list(OUTPUT_RULES.get(sheet_prefix, []))
 
 
 def _is_empty(val: Any) -> bool:
