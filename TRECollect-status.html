@@ -218,7 +218,7 @@
         <span>Wiki</span>
       </a>
       <a
-        id="sheets-link"
+        id="sheets-link-latest"
         class="header-link"
         href="#"
         target="_blank"
@@ -230,7 +230,22 @@
           <path fill="#E6F4EA" d="M9 10h6v1H9zm0 3h6v1H9zm0 3h3v1H9z" />
           <path fill="none" d="M0 0h24v24H0z" />
         </svg>
-        <span>Latest submissions sheet</span>
+        <span>Latest submissions</span>
+      </a>
+      <a
+        id="sheets-link-all"
+        class="header-link"
+        href="#"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#0F9D58" d="M6 2h9l5 5v15H6z" />
+          <path fill="#34A853" d="M20 7h-4V3z" />
+          <path fill="#E6F4EA" d="M9 10h6v1H9zm0 3h6v1H9zm0 3h3v1H9z" />
+          <path fill="none" d="M0 0h24v24H0z" />
+        </svg>
+        <span>All submissions</span>
       </a>
     </div>
   </header>
@@ -347,16 +362,29 @@
     }
 
     (async function init() {
-      // 0. Google Sheets link from external file
+      // 0. Google Sheets links from link.txt: line 1 = latest submissions, line 2 = all submissions
       const linkTxt = await fetchText("link.txt");
-      const linkEl = document.getElementById("sheets-link");
-      if (linkEl) {
-        const url = (linkTxt || "").trim();
-        if (url) {
-          linkEl.href = url;
+      const lines = (linkTxt || "")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      const latestUrl = lines[0] || "";
+      const allUrl = lines[1] || "";
+
+      const linkLatest = document.getElementById("sheets-link-latest");
+      const linkAll = document.getElementById("sheets-link-all");
+      if (linkLatest) {
+        if (latestUrl) {
+          linkLatest.href = latestUrl;
         } else {
-          // Hide link if file missing or empty
-          linkEl.style.display = "none";
+          linkLatest.style.display = "none";
+        }
+      }
+      if (linkAll) {
+        if (allUrl) {
+          linkAll.href = allUrl;
+        } else {
+          linkAll.style.display = "none";
         }
       }
 
